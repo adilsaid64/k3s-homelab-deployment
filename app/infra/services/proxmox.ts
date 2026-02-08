@@ -1,4 +1,4 @@
-import { ProxmoxAccount, ProxmoxGroup } from '../../components/proxmox/UserGroups';
+import { ProxmoxAccount, ProxmoxGroup } from '../components/proxmox/UserGroups';
 import * as pulumi from '@pulumi/pulumi';
 
 function getProxmoxVmIp(vm: proxmoxve.vm.VirtualMachine) {
@@ -63,6 +63,10 @@ export const ubuntuImage = new proxmoxve.download.File(
   },
   { provider: provider },
 );
+
+// new K3MasterVm()
+
+// new K3WorkerVm()
 
 export const k3sToken = new random.RandomPassword(`${$app.stage}-k3s-token`, {
   length: 32,
@@ -262,8 +266,3 @@ export const workerVm = new proxmoxve.vm.VirtualMachine(
 );
 
 export const workerVmIp = getProxmoxVmIp(workerVm);
-
-// Api Goal, using cloud inits to automate all configs
-// new K3sCluster('k3-master') // provisions control plane cluster
-// new K3sNodeGroup('k3-worker-cpu', {...}) //
-// new K3sNodeGroup('k3-worker-gpu', {...}) //
