@@ -4,16 +4,25 @@ export type ProxmoxRole =
     | "PVEAdmin"
     | "PVEVMAdmin"
     | "PVEVMUser"
-    | "PVEDatastoreAdmin";
+    | "PVEDatastoreAdmin"
+    | "PVEAuditor";
 
 
-export interface ProxmoxGroupArgs {
-    groupId: string;
+type DatacenterScope = {
+    scope: "datacenter";
+};
+
+type PoolScope = {
+    scope: "pool";
+    poolId: pulumi.Input<string>;
+};
+
+export type ProxmoxGroupArgs = {
+    groupId: pulumi.Input<string>;
     role: ProxmoxRole;
-    scope: "datacenter" | "pool";
-    poolId?: string;
     provider: proxmoxve.Provider;
-}
+} & (DatacenterScope | PoolScope);
+
 
 export class ProxmoxGroup extends pulumi.ComponentResource {
     groupId: pulumi.Output<string>;
@@ -25,14 +34,18 @@ export class ProxmoxGroup extends pulumi.ComponentResource {
     ) {
         super("custom:infra:ProxmoxGroup", name, {}, opts);
 
-        if (args.scope === "pool" && !args.poolId) {
-            throw new Error("poolId required for pool scope");
-        }
-
         const acl =
             args.scope === "datacenter"
-                ? { path: "/", roleId: args.role, propagate: true }
-                : { path: `/pool/${args.poolId}`, roleId: args.role, propagate: true };
+                ? {
+                    path: "/",
+                    roleId: args.role,
+                    propagate: true,
+                }
+                : {
+                    path: pulumi.interpolate`/pool/${args.poolId}`,
+                    roleId: args.role,
+                    propagate: true,
+                };
 
         const group = new proxmoxve.permission.Group(
             name,
@@ -47,13 +60,16 @@ export class ProxmoxGroup extends pulumi.ComponentResource {
         );
 
         this.groupId = group.groupId;
-        this.registerOutputs();
+        this.registerOutputs({
+            groupId: this.groupId,
+        });
     }
 }
 
 
 export interface ProxmoxAccountArgs {
     userId: string;
+    password: string
     groupId: pulumi.Input<string>;
     provider: proxmoxve.Provider;
 }
@@ -74,6 +90,7 @@ export class ProxmoxAccount extends pulumi.ComponentResource {
             name,
             {
                 userId: args.userId,
+                password: args.password,
                 enabled: true,
                 groups: [args.groupId],
             },
