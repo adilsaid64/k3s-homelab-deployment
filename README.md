@@ -2,6 +2,24 @@
 
 IaC repo for my homelab usinng Proxmox and K3s. Iac in pulumi/sst
 
+## Deploy Infra
+
+To deploy the infrastructure, run the following command in the root directory of the repo:
+
+Ensure to first configure your .env file. Reference the `template.env`.
+
+Install dependencies.
+
+```bash
+pnpm i
+```
+
+Deploy stack
+```bash
+pnpm sst deploy --stage dev
+```
+
+To verify, you can login into the UI proxmox as root or you can login with the `admin-dev` (`admin-<stage>`) user created as part of the IaC to scope your view to the specific stage pool on Proxmox.
 
 ## Connect to your Cluster
 
