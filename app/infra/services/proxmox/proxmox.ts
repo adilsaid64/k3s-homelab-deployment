@@ -1,4 +1,4 @@
-import { ProxmoxAccount, ProxmoxGroup } from "../components/ProxmoxUserGroups";
+import { ProxmoxAccount, ProxmoxGroup } from "../../components/proxmox/UserGroups";
 
 const provider = new proxmoxve.Provider("proxmox", {
     endpoint: process.env.PROXMOX_VE_ENDPOINT!,
@@ -31,14 +31,14 @@ export const viewersGroup = new ProxmoxGroup(`${$app.stage}-viewers`, {
 export const viewerUser = new ProxmoxAccount(`${$app.stage}-viewer`, {
     userId: `viewer-${$app.stage}@pve`,
     password: "password",
-    groupId: viewersGroup.groupId,
+    groupIds: [viewersGroup.groupId],
     provider,
 });
 
 export const adminUser = new ProxmoxAccount(`${$app.stage}-admin`, {
     userId: `admin-${$app.stage}@pve`,
     password: 'password',
-    groupId: adminsGroup.groupId,
+    groupIds: [adminsGroup.groupId],
     provider,
 });
 
@@ -52,3 +52,7 @@ export const ubuntuImage = new proxmoxve.download.File("ubuntu-cloudimg", {
 }, { provider: provider });
 
 
+// Api Goal, using cloud inits to automate all configs
+// new K3sCluster('k3-master') // provisions control plane cluster
+// new K3sNodeGroup('k3-worker-cpu', {...}) //
+// new K3sNodeGroup('k3-worker-gpu', {...}) // 

@@ -1,1 +1,1 @@
-export * from './proxmox'
+export * from './proxmox/proxmox'

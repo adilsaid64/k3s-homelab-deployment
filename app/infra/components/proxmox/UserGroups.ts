@@ -70,7 +70,7 @@ export class ProxmoxGroup extends pulumi.ComponentResource {
 export interface ProxmoxAccountArgs {
     userId: string;
     password: string
-    groupId: pulumi.Input<string>;
+    groupIds: pulumi.Input<string>[];
     provider: proxmoxve.Provider;
 }
 
@@ -92,7 +92,7 @@ export class ProxmoxAccount extends pulumi.ComponentResource {
                 userId: args.userId,
                 password: args.password,
                 enabled: true,
-                groups: [args.groupId],
+                groups: args.groupIds,
             },
             {
                 parent: this,
