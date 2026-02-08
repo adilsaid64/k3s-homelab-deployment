@@ -8,7 +8,7 @@ To deploy the infrastructure, run the following command in the root directory of
 
 Ensure to first configure your .env file. Reference the `template.env`.
 
-Install dependencies.
+Install dependencies. Node version `18.20.8` and Pnpm version `10.13.1`.
 
 ```bash
 pnpm i
@@ -55,4 +55,12 @@ And you can rename your context from default to something meaningful like dev/pr
 
 ```
 kubectl config rename-context default dev
+```
+
+## Destroy Infra
+
+To destroy all resources including, VMs, Users, Pools, and Files created by the stack, run:
+
+```bash
+pnpm sst destroy --stage dev
 ```
