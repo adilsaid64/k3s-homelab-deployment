@@ -57,19 +57,18 @@ export const adminUser = new ProxmoxAccount(`${$app.stage}-admin`, {
 
 export const node = proxmoxve.getNodeOutput({ nodeName: 'proxmox' }, { provider: provider });
 
-export const ubuntuImage = new proxmoxve.download.File("ubuntu-cloudimg", {
+export const ubuntuImage = new proxmoxve.download.File(`${$app.stage}-ubuntu-cloudimg`, {
     contentType: "iso",
     datastoreId: "local",
     nodeName: node.nodeName,
+    fileName: `${$app.stage}-jammy-server-cloudimg-amd64.img`,
     url: "https://cloud-images.ubuntu.com/jammy/current/jammy-server-cloudimg-amd64.img",
 }, { provider: provider });
-
 
 export const k3sToken = new random.RandomPassword(`${$app.stage}-k3s-token`, {
     length: 32,
     special: false,
 });
-
 
 export const masterCloudInit = new proxmoxve.storage.File(`${$app.stage}-k3s-master`, {
     contentType: "snippets",
@@ -152,6 +151,7 @@ export const masterVm = new proxmoxve.vm.VirtualMachine(`k3s-master-${$app.stage
         device: "socket",
     }],
     started: true,
+    tags: [`k3s-${$app.stage}`]
 }, { provider });
 
 
@@ -234,6 +234,7 @@ export const workerVm = new proxmoxve.vm.VirtualMachine(`k3s-worker-${$app.stage
         device: "socket",
     }],
     started: true,
+    tags: [`k3s-${$app.stage}`]
 }, { provider });
 
 export const workerVmIp = getProxmoxVmIp(workerVm)

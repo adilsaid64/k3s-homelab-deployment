@@ -27,4 +27,14 @@ Save the file and verify
 kubectl get nodes
 ```
 
-You should see your nodes listed.
+You should see your nodes listed. You can list your contexts with the following command:
+
+```bash
+kubectl config get-contexts
+```
+
+And you can rename your context from default to something meaningful like dev/prod, or the name of your stack with the following command:
+
+```
+kubectl config rename-context default dev
+```
