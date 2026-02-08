@@ -43,14 +43,14 @@ export const viewersGroup = new ProxmoxGroup(`${$app.stage}-viewers`, {
 
 export const viewerUser = new ProxmoxAccount(`${$app.stage}-viewer`, {
     userId: `viewer-${$app.stage}@pve`,
-    password: "password",
+    password: process.env.PROXMOX_VIEWER_PASSWORD,
     groupIds: [viewersGroup.groupId],
     provider,
 });
 
 export const adminUser = new ProxmoxAccount(`${$app.stage}-admin`, {
     userId: `admin-${$app.stage}@pve`,
-    password: 'password',
+    password: process.env.PROXMOX_ADMIN_PASSWORD,
     groupIds: [adminsGroup.groupId],
     provider,
 });
@@ -86,7 +86,7 @@ users:
     sudo: ALL=(ALL) NOPASSWD:ALL
     shell: /bin/bash
     lock_passwd: false
-    passwd: $6$PalBJMOV30VVrUQ7$3G.ne46noPnxR.ugwHkH33dTDDI4Q1R14CQRfdQmxQ56M6zeosF3FGBRsBeW1y2qrc7LSjjrEK9dnu8oe2ui8/
+    passwd: ${process.env.VM_SSH_PASSWORD_HASH}
     ssh_authorized_keys:
       - ${process.env.SSH_PUBLIC_KEY}
 ssh_pwauth: true
@@ -173,7 +173,7 @@ users:
     sudo: ALL=(ALL) NOPASSWD:ALL
     shell: /bin/bash
     lock_passwd: false
-    passwd: $6$PalBJMOV30VVrUQ7$3G.ne46noPnxR.ugwHkH33dTDDI4Q1R14CQRfdQmxQ56M6zeosF3FGBRsBeW1y2qrc7LSjjrEK9dnu8oe2ui8/
+    passwd: ${process.env.VM_SSH_PASSWORD_HASH}
     ssh_authorized_keys:
       - ${process.env.SSH_PUBLIC_KEY}
 ssh_pwauth: true
