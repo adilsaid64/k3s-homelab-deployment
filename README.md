@@ -1,4 +1,4 @@
-# Homelab setup :) 
+# Homelab setup :)
 
 IaC repo for my homelab usinng Proxmox and K3s. Iac in pulumi/sst
 
@@ -15,6 +15,7 @@ pnpm i
 ```
 
 Deploy stack
+
 ```bash
 pnpm sst deploy --stage dev
 ```
@@ -26,7 +27,7 @@ To verify, you can login into the UI proxmox as root or you can login with the `
 Get your kubeconfig file from the master node and copy it to your local machine. Run the following command, replacing `<Your Master IP>` with the actual IP address of your master node. You can get this IP from Proxmox or SST outputs.
 
 ```bash
- scp ubuntu@<Your Master IP>:/etc/rancher/k3s/k3s.yaml ~/.kube/config           
+ scp ubuntu@<Your Master IP>:/etc/rancher/k3s/k3s.yaml ~/.kube/config
 ```
 
 Then update your kubeconfig file to point to the correct IP address of your master node. Open the `~/.kube/config` file in a text editor and replace the server URL with the IP address of your master node. It should look something like this:
@@ -34,13 +35,14 @@ Then update your kubeconfig file to point to the correct IP address of your mast
 ```yaml
 apiVersion: v1
 clusters:
-- cluster:
-    certificate-authority-data: ...
-    server: https://<Your Master IP>:6443
-  name: default
+  - cluster:
+      certificate-authority-data: ...
+      server: https://<Your Master IP>:6443
+    name: default
 ```
 
 Save the file and verify
+
 ```bash
 kubectl get nodes
 ```

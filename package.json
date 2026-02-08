@@ -1,9 +1,22 @@
 {
+  "scripts": {
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "prepare": "husky install"
+  },
+  "lint-staged": {
+    "*.{ts,js,json,md,yml,yaml}": [
+      "prettier --write"
+    ]
+  },
   "dependencies": {
     "@pulumi/pulumi": "^3.219.0",
     "sst": "3.17.38"
   },
   "devDependencies": {
-    "@types/aws-lambda": "8.10.160"
+    "@types/aws-lambda": "8.10.160",
+    "husky": "^9.1.7",
+    "lint-staged": "^16.2.7",
+    "prettier": "^3.8.1"
   }
 }
