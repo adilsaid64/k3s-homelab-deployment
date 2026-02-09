@@ -64,5 +64,5 @@ kubectl config rename-context default dev
 To destroy all resources including, VMs, Users, Pools, and Files created by the stack, run:
 
 ```bash
-pnpm sst destroy --stage dev
+pnpm sst remove --stage dev
 ```
