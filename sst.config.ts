@@ -16,18 +16,16 @@ export default $config({
   async run() {
     const serviceInfra = await import('./app/infra/services');
     return {
-      // proxmoxNodeName: serviceInfra.node.nodeName,
-      // proxmoxNodeCpuCount: serviceInfra.node.cpuCount,
-      // proxmoxNodeMemoryAvailable: serviceInfra.node.memoryAvailable,
-      // proxmoxNodeMemoryUsed: serviceInfra.node.memoryUsed,
-      // proxmoxNodeCpuModel: serviceInfra.node.cpuModel,
-      // proxmoxUser: serviceInfra.adminUser.userId,
-      // proxmoxToken: serviceInfra.adminUser.tokenId,
-      // stagePoolsId: serviceInfra.stagePool.poolId,
-      // poolsId: serviceInfra.stagePool.id,
-      // ubuntoImage: serviceInfra.ubuntuImage.id,
+      proxmoxNodeName: serviceInfra.node.nodeName,
+      proxmoxNodeCpuCount: serviceInfra.node.cpuCount,
+      proxmoxNodeMemoryAvailable: serviceInfra.node.memoryAvailable,
+      proxmoxNodeMemoryUsed: serviceInfra.node.memoryUsed,
+      proxmoxNodeCpuModel: serviceInfra.node.cpuModel,
+      proxmoxUser: serviceInfra.adminUser.userId,
+      poolsId: serviceInfra.stagePool.id,
+      ubuntoImage: serviceInfra.ubuntuImage.id,
       k3MasterIp: serviceInfra.k3MasterIp,
-      // workerVmIp: serviceInfra.workerVmIp,
+      workerVmIps: serviceInfra.workerVmIps,
     };
   },
 });
