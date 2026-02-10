@@ -36,11 +36,7 @@ export class KubePrometheusStack extends pulumi.ComponentResource {
   readonly namespace: kubernetes.core.v1.Namespace;
   readonly release: kubernetes.helm.v3.Release;
 
-  constructor(
-    name: string,
-    args: KubePrometheusStackArgs,
-    opts?: pulumi.ComponentResourceOptions,
-  ) {
+  constructor(name: string, args: KubePrometheusStackArgs, opts?: pulumi.ComponentResourceOptions) {
     super('custom:infra:KubePrometheusStack', name, {}, opts);
 
     this.namespace = new kubernetes.core.v1.Namespace(
@@ -57,9 +53,9 @@ export class KubePrometheusStack extends pulumi.ComponentResource {
     const scheduling = (s?: SchedulingArgs) =>
       s
         ? {
-          nodeSelector: s.nodeSelector,
-          tolerations: s.tolerations,
-        }
+            nodeSelector: s.nodeSelector,
+            tolerations: s.tolerations,
+          }
         : {};
 
     const grafanaIngress = args.grafana?.ingress;
@@ -101,19 +97,19 @@ export class KubePrometheusStack extends pulumi.ComponentResource {
             ...scheduling(args.grafana?.scheduling),
             ingress: grafanaIngress
               ? {
-                enabled: grafanaIngress.enabled ?? true,
-                ingressClassName: grafanaIngress.className ?? 'traefik',
-                hosts: [grafanaIngress.host],
-                paths: ['/'],
-                tls: grafanaIngress.tlsSecretName
-                  ? [
-                    {
-                      secretName: grafanaIngress.tlsSecretName,
-                      hosts: [grafanaIngress.host],
-                    },
-                  ]
-                  : [],
-              }
+                  enabled: grafanaIngress.enabled ?? true,
+                  ingressClassName: grafanaIngress.className ?? 'traefik',
+                  hosts: [grafanaIngress.host],
+                  paths: ['/'],
+                  tls: grafanaIngress.tlsSecretName
+                    ? [
+                        {
+                          secretName: grafanaIngress.tlsSecretName,
+                          hosts: [grafanaIngress.host],
+                        },
+                      ]
+                    : [],
+                }
               : { enabled: false },
           },
           alertmanager: {

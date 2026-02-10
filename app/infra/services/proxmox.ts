@@ -78,9 +78,8 @@ export const k3MasterIp = new ProxmoxK3sMaster(`master-${$app.stage}`, {
   k3sToken: k3sToken,
   poolId: stagePool.poolId,
   proxmoxNode: node,
-  ubuntuImageId: ubuntuImage.id
-})
-
+  ubuntuImageId: ubuntuImage.id,
+});
 
 // export const masterCloudInit = new proxmoxve.storage.File(
 //   `${$app.stage}-k3s-master`,
