@@ -1,7 +1,8 @@
+import { ProxmoxK3sMaster } from '../components/proxmox/K3sWorker';
 import { ProxmoxAccount, ProxmoxGroup } from '../components/proxmox/UserGroups';
 import * as pulumi from '@pulumi/pulumi';
 
-function getProxmoxVmIp(vm: proxmoxve.vm.VirtualMachine) {
+export function getProxmoxVmIp(vm: proxmoxve.vm.VirtualMachine) {
   const ip = vm.ipv4Addresses.apply((allIfaces) =>
     allIfaces.flat().find((ip) => !ip.startsWith('127.') && !ip.startsWith('10.')),
   );
@@ -73,104 +74,112 @@ export const k3sToken = new random.RandomPassword(`${$app.stage}-k3s-token`, {
   special: false,
 });
 
-export const masterCloudInit = new proxmoxve.storage.File(
-  `${$app.stage}-k3s-master`,
-  {
-    contentType: 'snippets',
-    datastoreId: 'local',
-    nodeName: node.nodeName,
-    sourceRaw: {
-      fileName: `${$app.stage}-k3s-master.yml`,
-      data: pulumi.interpolate`
-#cloud-config
-hostname: k3s-master-${$app.stage}
-manage_etc_hosts: true
+export const k3MasterIp = new ProxmoxK3sMaster(`master-${$app.stage}`, {
+  k3sToken: k3sToken,
+  poolId: stagePool.poolId,
+  proxmoxNode: node,
+  ubuntuImageId: ubuntuImage.id
+})
 
-users:
-  - name: ubuntu
-    sudo: ALL=(ALL) NOPASSWD:ALL
-    shell: /bin/bash
-    lock_passwd: false
-    passwd: ${process.env.VM_SSH_PASSWORD_HASH}
-    ssh_authorized_keys:
-      - ${process.env.SSH_PUBLIC_KEY}
-ssh_pwauth: true
-disable_root: true
 
-package_update: true
-packages:
-  - curl
-  - qemu-guest-agent
+// export const masterCloudInit = new proxmoxve.storage.File(
+//   `${$app.stage}-k3s-master`,
+//   {
+//     contentType: 'snippets',
+//     datastoreId: 'local',
+//     nodeName: node.nodeName,
+//     sourceRaw: {
+//       fileName: `${$app.stage}-k3s-master.yml`,
+//       data: pulumi.interpolate`
+// #cloud-config
+// hostname: k3s-master-${$app.stage}
+// manage_etc_hosts: true
 
-runcmd:
-  - sudo systemctl enable qemu-guest-agent
-  - sudo systemctl start qemu-guest-agent
-  - |
-    IP=$(hostname -I | awk '{print $1}')
-    curl -sfL https://get.k3s.io | sudo sh -s - server \
-      --write-kubeconfig-mode 644 \
-      --token ${k3sToken.result} \
-      --node-taint CriticalAddonsOnly=true:NoExecute \
-      --node-ip $IP \
-      --advertise-address $IP
-  `,
-    },
-  },
-  { provider },
-);
+// users:
+//   - name: ubuntu
+//     sudo: ALL=(ALL) NOPASSWD:ALL
+//     shell: /bin/bash
+//     lock_passwd: false
+//     passwd: ${process.env.VM_SSH_PASSWORD_HASH}
+//     ssh_authorized_keys:
+//       - ${process.env.SSH_PUBLIC_KEY}
+// ssh_pwauth: true
+// disable_root: true
 
-export const masterVm = new proxmoxve.vm.VirtualMachine(
-  `k3s-master-${$app.stage}`,
-  {
-    nodeName: node.nodeName,
-    poolId: stagePool.poolId,
-    cpu: { cores: 2, type: 'host' },
-    memory: { dedicated: 4096 },
-    scsiHardware: 'virtio-scsi-pci',
-    disks: [
-      {
-        interface: 'scsi0',
-        datastoreId: 'local-lvm',
-        fileId: ubuntuImage.id,
-        size: 8,
-        ssd: true,
-      },
-    ],
-    initialization: {
-      datastoreId: 'local-lvm',
-      ipConfigs: [{ ipv4: { address: 'dhcp' } }],
-      userDataFileId: masterCloudInit.id,
-    },
-    cdrom: {
-      fileId: 'none',
-    },
-    networkDevices: [
-      {
-        bridge: 'vmbr0',
-        model: 'virtio',
-      },
-    ],
-    operatingSystem: { type: 'l26' },
-    agent: {
-      enabled: true,
-      timeout: '5m',
-      waitForIp: {
-        ipv4: true,
-        ipv6: true,
-      },
-    },
-    serialDevices: [
-      {
-        device: 'socket',
-      },
-    ],
-    started: true,
-    tags: [`k3s-${$app.stage}`],
-  },
-  { provider },
-);
+// package_update: true
+// packages:
+//   - curl
+//   - qemu-guest-agent
 
-export const k3MasterIp = getProxmoxVmIp(masterVm);
+// runcmd:
+//   - sudo systemctl enable qemu-guest-agent
+//   - sudo systemctl start qemu-guest-agent
+//   - |
+//     IP=$(hostname -I | awk '{print $1}')
+//     curl -sfL https://get.k3s.io | sudo sh -s - server \
+//       --write-kubeconfig-mode 644 \
+//       --token ${k3sToken.result} \
+//       --node-taint CriticalAddonsOnly=true:NoExecute \
+//       --node-ip $IP \
+//       --advertise-address $IP
+//   `,
+//     },
+//   },
+//   { provider },
+// );
+
+// export const masterVm = new proxmoxve.vm.VirtualMachine(
+//   `k3s-master-${$app.stage}`,
+//   {
+//     nodeName: node.nodeName,
+//     poolId: stagePool.poolId,
+//     cpu: { cores: 2, type: 'host' },
+//     memory: { dedicated: 4096 },
+//     scsiHardware: 'virtio-scsi-pci',
+//     disks: [
+//       {
+//         interface: 'scsi0',
+//         datastoreId: 'local-lvm',
+//         fileId: ubuntuImage.id,
+//         size: 8,
+//         ssd: true,
+//       },
+//     ],
+//     initialization: {
+//       datastoreId: 'local-lvm',
+//       ipConfigs: [{ ipv4: { address: 'dhcp' } }],
+//       userDataFileId: masterCloudInit.id,
+//     },
+//     cdrom: {
+//       fileId: 'none',
+//     },
+//     networkDevices: [
+//       {
+//         bridge: 'vmbr0',
+//         model: 'virtio',
+//       },
+//     ],
+//     operatingSystem: { type: 'l26' },
+//     agent: {
+//       enabled: true,
+//       timeout: '5m',
+//       waitForIp: {
+//         ipv4: true,
+//         ipv6: true,
+//       },
+//     },
+//     serialDevices: [
+//       {
+//         device: 'socket',
+//       },
+//     ],
+//     started: true,
+//     tags: [`k3s-${$app.stage}`],
+//   },
+//   { provider },
+// );
+
+// export const k3MasterIp = getProxmoxVmIp(masterVm);
 
 export const workerCloudInit = new proxmoxve.storage.File(
   `${$app.stage}-k3s-worker`,
