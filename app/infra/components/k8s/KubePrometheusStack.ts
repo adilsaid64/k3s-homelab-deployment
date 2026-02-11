@@ -12,6 +12,23 @@ export interface SchedulingArgs {
   tolerations?: kubernetes.types.input.core.v1.Toleration[];
 }
 
+export interface ResourceRequirementsArgs {
+  requests?: {
+    cpu?: pulumi.Input<string>;
+    memory?: pulumi.Input<string>;
+  };
+  limits?: {
+    cpu?: pulumi.Input<string>;
+    memory?: pulumi.Input<string>;
+  };
+}
+
+export interface PodPlacementArgs {
+  nodeSelector?: Record<string, string>;
+  tolerations?: kubernetes.types.input.core.v1.Toleration[];
+  resources?: ResourceRequirementsArgs;
+}
+
 export interface KubePrometheusStackArgs {
   provider: kubernetes.Provider;
   namespace?: string;
@@ -19,15 +36,18 @@ export interface KubePrometheusStackArgs {
     enabled?: boolean;
     ingress?: GrafanaIngressArgs;
     scheduling?: SchedulingArgs;
+    pod?: PodPlacementArgs;
   };
   prometheus?: {
     retention?: string;
     scrapeInterval?: string;
     scheduling?: SchedulingArgs;
+    pod?: PodPlacementArgs;
   };
   alertmanager?: {
     enabled?: boolean;
     scheduling?: SchedulingArgs;
+    pod?: PodPlacementArgs;
   };
   extraValues?: pulumi.Inputs;
 }
@@ -50,12 +70,13 @@ export class KubePrometheusStack extends pulumi.ComponentResource {
       },
     );
 
-    const scheduling = (s?: SchedulingArgs) =>
-      s
+    const podConfig = (p?: PodPlacementArgs) =>
+      p
         ? {
-            nodeSelector: s.nodeSelector,
-            tolerations: s.tolerations,
-          }
+          nodeSelector: p.nodeSelector,
+          tolerations: p.tolerations,
+          resources: p.resources,
+        }
         : {};
 
     const grafanaIngress = args.grafana?.ingress;
@@ -70,16 +91,9 @@ export class KubePrometheusStack extends pulumi.ComponentResource {
           repo: 'https://prometheus-community.github.io/helm-charts',
         },
         values: {
-          nodeExporter: {
+          'prometheus-node-exporter': {
             tolerations: [
-              {
-                operator: 'Exists',
-                effect: 'NoSchedule',
-              },
-              {
-                operator: 'Exists',
-                effect: 'NoExecute',
-              },
+              { operator: 'Exists' },
             ],
           },
           prometheus: {
@@ -89,33 +103,35 @@ export class KubePrometheusStack extends pulumi.ComponentResource {
               evaluationInterval: '30s',
               serviceMonitorSelectorNilUsesHelmValues: false,
               podMonitorSelectorNilUsesHelmValues: false,
-              ...scheduling(args.prometheus?.scheduling),
+              ...podConfig(args.prometheus?.pod),
             },
           },
+
           grafana: {
             enabled: args.grafana?.enabled ?? true,
-            ...scheduling(args.grafana?.scheduling),
+            ...podConfig(args.grafana?.pod),
             ingress: grafanaIngress
               ? {
-                  enabled: grafanaIngress.enabled ?? true,
-                  ingressClassName: grafanaIngress.className ?? 'traefik',
-                  hosts: [grafanaIngress.host],
-                  paths: ['/'],
-                  tls: grafanaIngress.tlsSecretName
-                    ? [
-                        {
-                          secretName: grafanaIngress.tlsSecretName,
-                          hosts: [grafanaIngress.host],
-                        },
-                      ]
-                    : [],
-                }
+                enabled: grafanaIngress.enabled ?? true,
+                ingressClassName: grafanaIngress.className ?? 'traefik',
+                hosts: [grafanaIngress.host],
+                paths: ['/'],
+                tls: grafanaIngress.tlsSecretName
+                  ? [
+                    {
+                      secretName: grafanaIngress.tlsSecretName,
+                      hosts: [grafanaIngress.host],
+                    },
+                  ]
+                  : [],
+              }
               : { enabled: false },
           },
+
           alertmanager: {
             enabled: args.alertmanager?.enabled ?? true,
             alertmanagerSpec: {
-              ...scheduling(args.alertmanager?.scheduling),
+              ...podConfig(args.alertmanager?.pod),
             },
           },
           ...(args.extraValues ?? {}),
