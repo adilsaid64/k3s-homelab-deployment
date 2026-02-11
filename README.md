@@ -66,3 +66,16 @@ To destroy all resources including, VMs, Users, Pools, and Files created by the 
 ```bash
 pnpm sst remove --stage dev
 ```
+
+
+## Screenshots
+
+### SST Deploy
+![alt text](assests/sst-deploy.png)
+
+### Proxmox UI - All VM's configured as IaC
+![alt text](assests/proxmox-ui.png)
+
+### K8s Configured
+![alt text](assests/k8s-nodes.png)
+
