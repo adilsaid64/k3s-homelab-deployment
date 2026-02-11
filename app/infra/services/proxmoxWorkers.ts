@@ -67,3 +67,71 @@ runcmd:
 });
 
 export const workerVmIps = workerVms.map((vm) => vm.vm.ip);
+
+const workerGpuCloudInit = new proxmoxve.storage.File(
+  `${$app.stage}-k3s-worker-gpu-0`,
+  {
+    contentType: 'snippets',
+    datastoreId: 'local',
+    nodeName: node.nodeName,
+    sourceRaw: {
+      fileName: `${$app.stage}-k3s-worker-gpu.yml`,
+      data: pulumi.interpolate`
+#cloud-config
+hostname: k3s-worker-gpu-${$app.stage}
+manage_etc_hosts: true
+
+users:
+  - name: ubuntu
+    sudo: ALL=(ALL) NOPASSWD:ALL
+    shell: /bin/bash
+    lock_passwd: false
+    passwd: ${process.env.VM_SSH_PASSWORD_HASH}
+    ssh_authorized_keys:
+      - ${process.env.SSH_PUBLIC_KEY}
+ssh_pwauth: true
+disable_root: true
+
+package_update: true
+packages:
+  - curl
+  - qemu-guest-agent
+
+runcmd:
+  - sudo systemctl enable --now qemu-guest-agent
+  - |
+    set -eux
+    export K3S_URL=https://${k3MasterIp}:6443
+    export K3S_TOKEN=${k3sToken.result}
+    curl -sfL https://get.k3s.io | K3S_URL="https://${k3MasterIp}:6443" K3S_TOKEN="${k3sToken.result}" sh -s - agent --node-label gpu=true --node-taint gpu=true:NoSchedule
+  `,
+    },
+  },
+  { provider },
+);
+
+export const gpuWorker = process.env.DEPLOY_GPU_WORKER === "true" ? new ProxmoxK3sWorker(
+  `k3s-worker-gpu-${$app.stage}-0`,
+  {
+    proxmoxNode: node,
+    k3sToken: k3sToken,
+    ubuntuImageId: ubuntuImage.id,
+    poolId: stagePool.poolId,
+    cloudInit: workerGpuCloudInit,
+    ram: 16384,
+    cores: 4,
+    diskMemory: 60,
+    bios: "ovmf",
+    machine: "q35",
+    hostpcis: [
+      {
+        device: "hostpci0",
+        id: "01:00",
+        pcie: true,
+        xvga: true,
+        rombar: true,
+      },
+    ],
+  },
+  { provider, dependsOn: [k3Master] },
+) : undefined

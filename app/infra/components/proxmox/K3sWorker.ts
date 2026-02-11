@@ -10,6 +10,9 @@ interface ProxmoxWorkerArgs {
   ram: pulumi.Input<number>;
   cores: pulumi.Input<number>;
   diskMemory: pulumi.Input<number>;
+  bios?: string
+  machine?: string
+  hostpcis?: pulumi.Input<proxmoxve.types.input.VM.VirtualMachineHostpci[]>;
 }
 
 export class ProxmoxK3sWorker extends pulumi.ComponentResource {
@@ -24,6 +27,8 @@ export class ProxmoxK3sWorker extends pulumi.ComponentResource {
       {
         nodeName: args.proxmoxNode.nodeName,
         poolId: args.poolId,
+        bios: args.bios,
+        machine: args.machine,
         cpu: { cores: args.cores, type: 'host' },
         memory: { dedicated: args.ram },
         scsiHardware: 'virtio-scsi-pci',
@@ -65,6 +70,7 @@ export class ProxmoxK3sWorker extends pulumi.ComponentResource {
           },
         ],
         started: true,
+        hostpcis: args.hostpcis,
         tags: [`k3s-${$app.stage}`],
       },
       { provider: opts.provider },
