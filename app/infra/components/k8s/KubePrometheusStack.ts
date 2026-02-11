@@ -73,10 +73,10 @@ export class KubePrometheusStack extends pulumi.ComponentResource {
     const podConfig = (p?: PodPlacementArgs) =>
       p
         ? {
-          nodeSelector: p.nodeSelector,
-          tolerations: p.tolerations,
-          resources: p.resources,
-        }
+            nodeSelector: p.nodeSelector,
+            tolerations: p.tolerations,
+            resources: p.resources,
+          }
         : {};
 
     const grafanaIngress = args.grafana?.ingress;
@@ -110,19 +110,19 @@ export class KubePrometheusStack extends pulumi.ComponentResource {
             ...podConfig(args.grafana?.pod),
             ingress: grafanaIngress
               ? {
-                enabled: grafanaIngress.enabled ?? true,
-                ingressClassName: grafanaIngress.className ?? 'traefik',
-                hosts: [grafanaIngress.host],
-                paths: ['/'],
-                tls: grafanaIngress.tlsSecretName
-                  ? [
-                    {
-                      secretName: grafanaIngress.tlsSecretName,
-                      hosts: [grafanaIngress.host],
-                    },
-                  ]
-                  : [],
-              }
+                  enabled: grafanaIngress.enabled ?? true,
+                  ingressClassName: grafanaIngress.className ?? 'traefik',
+                  hosts: [grafanaIngress.host],
+                  paths: ['/'],
+                  tls: grafanaIngress.tlsSecretName
+                    ? [
+                        {
+                          secretName: grafanaIngress.tlsSecretName,
+                          hosts: [grafanaIngress.host],
+                        },
+                      ]
+                    : [],
+                }
               : { enabled: false },
           },
 

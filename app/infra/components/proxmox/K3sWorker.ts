@@ -10,8 +10,8 @@ interface ProxmoxWorkerArgs {
   ram: pulumi.Input<number>;
   cores: pulumi.Input<number>;
   diskMemory: pulumi.Input<number>;
-  bios?: string
-  machine?: string
+  bios?: string;
+  machine?: string;
   hostpcis?: pulumi.Input<proxmoxve.types.input.VM.VirtualMachineHostpci[]>;
 }
 

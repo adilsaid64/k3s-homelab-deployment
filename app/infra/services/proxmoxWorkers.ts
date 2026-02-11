@@ -110,28 +110,31 @@ runcmd:
   { provider },
 );
 
-export const gpuWorker = process.env.DEPLOY_GPU_WORKER === "true" ? new ProxmoxK3sWorker(
-  `k3s-worker-gpu-${$app.stage}-0`,
-  {
-    proxmoxNode: node,
-    k3sToken: k3sToken,
-    ubuntuImageId: ubuntuImage.id,
-    poolId: stagePool.poolId,
-    cloudInit: workerGpuCloudInit,
-    ram: 16384,
-    cores: 4,
-    diskMemory: 60,
-    bios: "ovmf",
-    machine: "q35",
-    hostpcis: [
-      {
-        device: "hostpci0",
-        id: "01:00",
-        pcie: true,
-        xvga: true,
-        rombar: true,
-      },
-    ],
-  },
-  { provider, dependsOn: [k3Master] },
-) : undefined
+export const gpuWorker =
+  process.env.DEPLOY_GPU_WORKER === 'true'
+    ? new ProxmoxK3sWorker(
+        `k3s-worker-gpu-${$app.stage}-0`,
+        {
+          proxmoxNode: node,
+          k3sToken: k3sToken,
+          ubuntuImageId: ubuntuImage.id,
+          poolId: stagePool.poolId,
+          cloudInit: workerGpuCloudInit,
+          ram: 16384,
+          cores: 4,
+          diskMemory: 60,
+          bios: 'ovmf',
+          machine: 'q35',
+          hostpcis: [
+            {
+              device: 'hostpci0',
+              id: '01:00',
+              pcie: true,
+              xvga: true,
+              rombar: true,
+            },
+          ],
+        },
+        { provider, dependsOn: [k3Master] },
+      )
+    : undefined;
