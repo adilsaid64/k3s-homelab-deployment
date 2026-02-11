@@ -1,25 +1,24 @@
-
 import * as pulumi from '@pulumi/pulumi';
 
-import { node, stagePool, ubuntuImage, provider } from "./proxmox";
+import { node, stagePool, ubuntuImage, provider } from './proxmox';
 import { ProxmoxK3sMaster } from '../components/proxmox/K3sMaster';
 
 export const k3sToken = new random.RandomPassword(`${$app.stage}-k3s-token`, {
-    length: 32,
-    special: false,
+  length: 32,
+  special: false,
 });
 
-// hostname: k3s-master-${$app.stage}
 export const masterCloudInit = new proxmoxve.storage.File(
-    `${$app.stage}-k3s-master`,
-    {
-        contentType: 'snippets',
-        datastoreId: 'local',
-        nodeName: node.nodeName,
-        sourceRaw: {
-            fileName: `${$app.stage}-k3s-master.yml`,
-            data: pulumi.interpolate`
+  `${$app.stage}-k3s-master`,
+  {
+    contentType: 'snippets',
+    datastoreId: 'local',
+    nodeName: node.nodeName,
+    sourceRaw: {
+      fileName: `${$app.stage}-k3s-master.yml`,
+      data: pulumi.interpolate`
 #cloud-config
+hostname: k3s-master-${$app.stage}
 manage_etc_hosts: true
 
 users:
@@ -50,12 +49,14 @@ runcmd:
       --node-ip $IP \
       --advertise-address $IP
   `,
-        },
     },
-    { provider },
+  },
+  { provider },
 );
 
-export const k3Master = new ProxmoxK3sMaster(`k3s-master-${$app.stage}`, {
+export const k3Master = new ProxmoxK3sMaster(
+  `k3s-master-${$app.stage}`,
+  {
     k3sToken: k3sToken,
     poolId: stagePool.poolId,
     proxmoxNode: node,
@@ -63,7 +64,9 @@ export const k3Master = new ProxmoxK3sMaster(`k3s-master-${$app.stage}`, {
     cloudInit: masterCloudInit,
     ram: 4096,
     cores: 2,
-    diskMemory: 12
-}, { provider: provider });
+    diskMemory: 12,
+  },
+  { provider: provider },
+);
 
-export const k3MasterIp = k3Master.ip
+export const k3MasterIp = k3Master.ip;
