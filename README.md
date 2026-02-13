@@ -8,7 +8,7 @@ To deploy the infrastructure, run the following command in the root directory of
 
 Ensure to first configure your .env file. Reference the `template.env`.
 
-Install dependencies. Node version `18.20.8` and Pnpm version `10.13.1`.
+Install dependencies. Use `nvm isntall` to download the projects node version and `pnpm` version `10.13.1`.
 
 ```bash
 pnpm i
