@@ -1,5 +1,4 @@
 import * as pulumi from '@pulumi/pulumi';
-
 import { ProxmoxK3sWorker } from '../components/proxmox/K3sWorker';
 import { node, stagePool, ubuntuImage, provider } from './proxmox';
 import { k3Master, k3MasterIp, k3sToken } from './proxmoxMaster';

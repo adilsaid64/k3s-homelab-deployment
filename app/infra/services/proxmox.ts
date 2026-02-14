@@ -1,7 +1,4 @@
-import { ProxmoxK3sMaster } from '../components/proxmox/K3sMaster';
-import { ProxmoxK3sWorker } from '../components/proxmox/K3sWorker';
 import { ProxmoxAccount, ProxmoxGroup } from '../components/proxmox/UserGroups';
-import * as pulumi from '@pulumi/pulumi';
 
 export function getProxmoxVmIp(vm: proxmoxve.vm.VirtualMachine) {
   const ip = vm.ipv4Addresses.apply((allIfaces) =>
