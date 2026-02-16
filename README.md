@@ -80,3 +80,11 @@ pnpm sst remove --stage dev
 ### K8s Configured
 
 ![alt text](assests/k8s-nodes.png)
+
+### Notes
+
+Add local DNS entry so Windows can resolve k3s ingress hostname without port-forwarding
+
+```bash
+Add-Content "C:\Windows\System32\drivers\etc\hosts" "`n<Host-Machine-Proxmox-IP> <DNS-Entry-Hosted-On-K3s>"
+```
