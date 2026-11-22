@@ -1,5 +1,5 @@
 import * as pulumi from '@pulumi/pulumi';
-import { getProxmoxVmIp } from '../../services';
+import { getProxmoxVmIp } from '../../services/proxmox';
 
 interface ProxmoxMasterArgs {
   proxmoxNode: pulumi.Output<proxmoxve.GetNodeResult>;
@@ -56,7 +56,7 @@ export class ProxmoxK3sMaster extends pulumi.ComponentResource {
           timeout: '5m',
           waitForIp: {
             ipv4: true,
-            ipv6: true,
+            ipv6: false,
           },
         },
         serialDevices: [

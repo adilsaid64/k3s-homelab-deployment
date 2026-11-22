@@ -27,6 +27,7 @@ export default $config({
       ubuntoImage: serviceInfra.ubuntuImage.id,
       k3MasterIp: serviceInfra.k3MasterIp,
       workerVmIps: serviceInfra.workerVmIps,
+      kubeconfig: serviceInfra.kubeconfig,
     };
   },
 });

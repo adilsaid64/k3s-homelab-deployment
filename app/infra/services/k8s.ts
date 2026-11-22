@@ -1,11 +1,10 @@
 import { KubePrometheusStack } from '../components/k8s/KubePrometheusStack';
-import { k3Master } from './proxmoxMaster';
-import { workerVms } from './proxmoxWorkers';
 import { Excalidraw } from '../components/k8s/Excalidraw';
 import { MinioStack } from '../components/k8s/minio';
 import { LokiDistributedStack } from '../components/k8s/loki';
+import { clusterReady, k8sProvider } from './kubeconfig';
 
-const k8sProvider = new kubernetes.Provider('k3s');
+const k8sDependsOn = [clusterReady];
 
 export const kubePromStack = new KubePrometheusStack(
   'monitoring-stack',
@@ -107,40 +106,48 @@ export const kubePromStack = new KubePrometheusStack(
       },
     },
   },
-  { dependsOn: [k3Master, workerVms[0].vm] },
+  { dependsOn: k8sDependsOn },
 );
 
-export const excalidraw = new Excalidraw('excalidraw', {
-  provider: k8sProvider,
-  namespace: 'exclaidraw',
-  ingress: {
-    enabled: true,
-    host: 'draw.k3s.local',
-    className: 'traefik',
-  },
-  pod: {
-    resources: {
-      requests: {
-        cpu: '50m',
-        memory: '64Mi',
-      },
-      limits: {
-        cpu: '200m',
-        memory: '128Mi',
+export const excalidraw = new Excalidraw(
+  'excalidraw',
+  {
+    provider: k8sProvider,
+    namespace: 'exclaidraw',
+    ingress: {
+      enabled: true,
+      host: 'draw.k3s.local',
+      className: 'traefik',
+    },
+    pod: {
+      resources: {
+        requests: {
+          cpu: '50m',
+          memory: '64Mi',
+        },
+        limits: {
+          cpu: '200m',
+          memory: '128Mi',
+        },
       },
     },
   },
-});
+  { dependsOn: k8sDependsOn },
+);
 
-export const minio = new MinioStack('minio', {
-  provider: k8sProvider,
-  namespace: 'minio',
+export const minio = new MinioStack(
+  'minio',
+  {
+    provider: k8sProvider,
+    namespace: 'minio',
 
-  ingress: {
-    host: 'minio.k3s.local',
-    className: 'traefik',
+    ingress: {
+      host: 'minio.k3s.local',
+      className: 'traefik',
+    },
   },
-});
+  { dependsOn: k8sDependsOn },
+);
 
 export const loki = new LokiDistributedStack(
   'loki',
@@ -160,6 +167,6 @@ export const loki = new LokiDistributedStack(
     },
   },
   {
-    dependsOn: minio,
+    dependsOn: [minio, ...k8sDependsOn],
   },
 );
