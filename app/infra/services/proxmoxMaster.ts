@@ -1,6 +1,6 @@
 import * as pulumi from '@pulumi/pulumi';
 
-import { node, stagePool, ubuntuImage, provider } from './proxmox';
+import { node, stagePool, ubuntuImage, provider, localSnippets } from './proxmox';
 import { ProxmoxK3sMaster } from '../components/proxmox/K3sMaster';
 
 export const k3sToken = new random.RandomPassword(`${$app.stage}-k3s-token`, {
@@ -51,7 +51,7 @@ runcmd:
   `,
     },
   },
-  { provider },
+  { provider, dependsOn: [localSnippets] },
 );
 
 export const k3Master = new ProxmoxK3sMaster(

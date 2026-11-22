@@ -10,6 +10,7 @@ export default $config({
         '@muhlba91/pulumi-proxmoxve': '7.12.0',
         '@pulumi/random': '4.19.1',
         '@pulumi/kubernetes': '4.25.0',
+        '@pulumi/command': '1.1.3',
       },
     };
   },

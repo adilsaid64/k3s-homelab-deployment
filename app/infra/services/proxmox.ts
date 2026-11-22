@@ -1,4 +1,6 @@
+import * as pulumi from '@pulumi/pulumi';
 import { ProxmoxAccount, ProxmoxGroup } from '../components/proxmox/UserGroups';
+import { ensureLocalSnippets } from './ensureSnippets';
 
 export function getProxmoxVmIp(vm: proxmoxve.vm.VirtualMachine) {
   const ip = vm.ipv4Addresses.apply((allIfaces) =>
@@ -48,7 +50,15 @@ export const adminUser = new ProxmoxAccount(`${$app.stage}-admin`, {
   provider,
 });
 
-export const node = proxmoxve.getNodeOutput({ nodeName: 'proxmox' }, { provider: provider });
+export const node = proxmoxve.getNodeOutput({ nodeName: 'pve' }, { provider: provider });
+
+export const localSnippets = ensureLocalSnippets({
+  nodeName: node.nodeName,
+  endpoint: process.env.PROXMOX_VE_ENDPOINT!,
+  username: process.env.PROXMOX_VE_USERNAME!,
+  password: pulumi.secret(process.env.PROXMOX_VE_PASSWORD!),
+  insecure: process.env.PROXMOX_VE_INSECURE === 'true',
+});
 
 export const ubuntuImage = new proxmoxve.download.File(
   `${$app.stage}-ubuntu-cloudimg`,

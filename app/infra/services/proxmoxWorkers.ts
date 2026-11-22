@@ -1,6 +1,6 @@
 import * as pulumi from '@pulumi/pulumi';
 import { ProxmoxK3sWorker } from '../components/proxmox/K3sWorker';
-import { node, stagePool, ubuntuImage, provider } from './proxmox';
+import { node, stagePool, ubuntuImage, provider, localSnippets } from './proxmox';
 import { k3Master, k3MasterIp, k3sToken } from './proxmoxMaster';
 
 const workerCount = 3;
@@ -45,7 +45,7 @@ runcmd:
   `,
       },
     },
-    { provider },
+    { provider, dependsOn: [localSnippets] },
   );
 
   const vm = new ProxmoxK3sWorker(
@@ -106,7 +106,7 @@ runcmd:
   `,
     },
   },
-  { provider },
+  { provider, dependsOn: [localSnippets] },
 );
 
 export const gpuWorker =
