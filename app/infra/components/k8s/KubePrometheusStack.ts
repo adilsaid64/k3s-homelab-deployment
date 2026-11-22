@@ -37,6 +37,9 @@ export interface KubePrometheusStackArgs {
     enabled?: boolean;
     adminUser?: pulumi.Input<string>;
     adminPassword?: pulumi.Input<string>;
+    plugins?: pulumi.Input<pulumi.Input<string>[]>;
+    additionalDataSources?: pulumi.Input<pulumi.Inputs[]>;
+    dashboards?: pulumi.Inputs;
     ingress?: GrafanaIngressArgs;
     scheduling?: SchedulingArgs;
     pod?: PodPlacementArgs;
@@ -104,6 +107,8 @@ export class KubePrometheusStack extends pulumi.ComponentResource {
               evaluationInterval: '30s',
               serviceMonitorSelectorNilUsesHelmValues: false,
               podMonitorSelectorNilUsesHelmValues: false,
+              // Required for Tempo metrics-generator → service graphs.
+              enableRemoteWriteReceiver: true,
               ...podConfig(args.prometheus?.pod),
             },
           },
@@ -112,6 +117,31 @@ export class KubePrometheusStack extends pulumi.ComponentResource {
             enabled: args.grafana?.enabled ?? true,
             adminUser: args.grafana?.adminUser ?? 'admin',
             adminPassword: args.grafana?.adminPassword,
+            plugins: args.grafana?.plugins,
+            additionalDataSources: args.grafana?.additionalDataSources,
+            ...(args.grafana?.dashboards
+              ? {
+                  dashboardProviders: {
+                    'dashboardproviders.yaml': {
+                      apiVersion: 1,
+                      providers: [
+                        {
+                          name: 'default',
+                          orgId: 1,
+                          folder: '',
+                          type: 'file',
+                          disableDeletion: false,
+                          editable: true,
+                          options: {
+                            path: '/var/lib/grafana/dashboards/default',
+                          },
+                        },
+                      ],
+                    },
+                  },
+                  dashboards: args.grafana.dashboards,
+                }
+              : {}),
             ...podConfig(args.grafana?.pod),
             ingress: grafanaIngress
               ? {

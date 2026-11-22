@@ -1,8 +1,12 @@
+import * as k8s from '@pulumi/kubernetes';
 import * as pulumi from '@pulumi/pulumi';
 import { KubePrometheusStack } from '../components/k8s/KubePrometheusStack';
 import { Excalidraw } from '../components/k8s/Excalidraw';
 import { MinioStack } from '../components/k8s/minio';
 import { LokiStack } from '../components/k8s/loki';
+import { AlloyStack } from '../components/k8s/alloy';
+import { TempoStack } from '../components/k8s/tempo';
+import { EmqxStack } from '../components/k8s/emqx';
 import { clusterReady, k8sProvider } from './kubeconfig';
 
 const k8sDependsOn = [clusterReady];
@@ -10,6 +14,112 @@ const k8sDependsOn = [clusterReady];
 if (!process.env.GRAFANA_ADMIN_PASSWORD) {
   throw new Error('GRAFANA_ADMIN_PASSWORD must be set in .env');
 }
+
+export const emqx = new EmqxStack(
+  'emqx',
+  {
+    provider: k8sProvider,
+    namespace: 'mqtt',
+    allowAnonymous: true,
+    // ServiceMonitor needs Prometheus Operator CRDs from kube-prometheus-stack.
+    createServiceMonitor: false,
+  },
+  { dependsOn: k8sDependsOn },
+);
+export const loki = new LokiStack(
+  'loki',
+  {
+    provider: k8sProvider,
+    namespace: 'loki',
+    retention: '72h',
+    ingress: {
+      host: 'loki.k3s.local',
+      className: 'traefik',
+    },
+  },
+  { dependsOn: k8sDependsOn },
+);
+
+export const alloy = new AlloyStack(
+  'alloy',
+  {
+    provider: k8sProvider,
+    namespace: 'alloy',
+    lokiPushUrl: 'http://loki-gateway.loki.svc.cluster.local/loki/api/v1/push',
+  },
+  { dependsOn: [...k8sDependsOn, loki] },
+);
+
+export const tempo = new TempoStack(
+  'tempo',
+  {
+    provider: k8sProvider,
+    namespace: 'tempo',
+    retention: '48h',
+    ingress: {
+      host: 'tempo.k3s.local',
+      className: 'traefik',
+    },
+  },
+  { dependsOn: k8sDependsOn },
+);
+
+const mqttDashboard = JSON.stringify({
+  annotations: { list: [] },
+  editable: true,
+  fiscalYearStartMonth: 0,
+  graphTooltip: 0,
+  id: null,
+  links: [],
+  panels: [
+    {
+      title: 'MQTT messages received',
+      type: 'timeseries',
+      gridPos: { h: 8, w: 12, x: 0, y: 0 },
+      datasource: { type: 'prometheus', uid: 'prometheus' },
+      targets: [
+        {
+          expr: 'sum(rate(mqtt_message_total[1m]))',
+          legendFormat: 'msg/s',
+          refId: 'A',
+        },
+      ],
+    },
+    {
+      title: 'MQTT messages by topic',
+      type: 'timeseries',
+      gridPos: { h: 8, w: 12, x: 12, y: 0 },
+      datasource: { type: 'prometheus', uid: 'prometheus' },
+      targets: [
+        {
+          expr: 'sum by (topic) (rate(mqtt_message_total[1m]))',
+          legendFormat: '{{topic}}',
+          refId: 'A',
+        },
+      ],
+    },
+    {
+      title: 'Recent logs (Loki)',
+      type: 'logs',
+      gridPos: { h: 10, w: 24, x: 0, y: 8 },
+      datasource: { type: 'loki', uid: 'loki' },
+      targets: [
+        {
+          expr: '{namespace=~".+"}',
+          refId: 'A',
+        },
+      ],
+    },
+  ],
+  schemaVersion: 39,
+  tags: ['mqtt', 'homelab'],
+  templating: { list: [] },
+  time: { from: 'now-15m', to: 'now' },
+  timezone: 'browser',
+  title: 'MQTT & Logs',
+  uid: 'mqtt-logs',
+  version: 1,
+});
 
 export const kubePromStack = new KubePrometheusStack(
   'monitoring-stack',
@@ -21,6 +131,75 @@ export const kubePromStack = new KubePrometheusStack(
       enabled: true,
       adminUser: process.env.GRAFANA_ADMIN_USER ?? 'admin',
       adminPassword: pulumi.secret(process.env.GRAFANA_ADMIN_PASSWORD),
+      plugins: ['grafana-mqtt-datasource'],
+      additionalDataSources: [
+        {
+          name: 'Loki',
+          type: 'loki',
+          access: 'proxy',
+          url: 'http://loki-gateway.loki.svc.cluster.local',
+          uid: 'loki',
+          isDefault: false,
+          jsonData: {
+            maxLines: 1000,
+            timeout: 60,
+            derivedFields: [
+              {
+                datasourceUid: 'tempo',
+                matcherRegex: 'traceID=(\\w+)|"trace_id":"(\\w+)"',
+                name: 'TraceID',
+                url: '${__value.raw}',
+                urlDisplayLabel: 'View Trace',
+              },
+            ],
+          },
+        },
+        {
+          name: 'Tempo',
+          type: 'tempo',
+          access: 'proxy',
+          url: 'http://tempo.tempo.svc.cluster.local:3200',
+          uid: 'tempo',
+          isDefault: false,
+          jsonData: {
+            tracesToLogsV2: {
+              datasourceUid: 'loki',
+              spanStartTimeShift: '-1h',
+              spanEndTimeShift: '1h',
+              filterByTraceID: true,
+              filterBySpanID: false,
+            },
+            tracesToMetrics: {
+              datasourceUid: 'prometheus',
+            },
+            serviceMap: {
+              datasourceUid: 'prometheus',
+            },
+            nodeGraph: {
+              enabled: true,
+            },
+            lokiSearch: {
+              datasourceUid: 'loki',
+            },
+          },
+        },
+        {
+          name: 'MQTT',
+          type: 'grafana-mqtt-datasource',
+          access: 'proxy',
+          uid: 'mqtt',
+          jsonData: {
+            uri: 'tcp://emqx.mqtt.svc.cluster.local:1883',
+          },
+        },
+      ],
+      dashboards: {
+        default: {
+          'mqtt-logs': {
+            json: mqttDashboard,
+          },
+        },
+      },
       ingress: {
         host: 'grafana.k3s.local',
         className: 'traefik',
@@ -113,9 +292,41 @@ export const kubePromStack = new KubePrometheusStack(
       },
     },
   },
-  { dependsOn: k8sDependsOn },
+  { dependsOn: [...k8sDependsOn, loki, tempo, emqx] },
 );
 
+// Scrape MQTT exporter once Prometheus Operator CRDs exist.
+new k8s.apiextensions.CustomResource(
+  'emqx-exporter-servicemonitor',
+  {
+    apiVersion: 'monitoring.coreos.com/v1',
+    kind: 'ServiceMonitor',
+    metadata: {
+      name: 'emqx-exporter',
+      namespace: 'mqtt',
+      labels: {
+        app: 'emqx-exporter',
+        release: 'monitoring-stack',
+      },
+    },
+    spec: {
+      selector: {
+        matchLabels: { app: 'emqx-exporter' },
+      },
+      namespaceSelector: {
+        matchNames: ['mqtt'],
+      },
+      endpoints: [
+        {
+          port: 'metrics',
+          interval: '30s',
+          path: '/metrics',
+        },
+      ],
+    },
+  },
+  { provider: k8sProvider, dependsOn: [emqx, kubePromStack] },
+);
 export const excalidraw = new Excalidraw(
   'excalidraw',
   {
@@ -149,20 +360,6 @@ export const minio = new MinioStack(
     namespace: 'minio',
     ingress: {
       host: 'minio.k3s.local',
-      className: 'traefik',
-    },
-  },
-  { dependsOn: k8sDependsOn },
-);
-
-export const loki = new LokiStack(
-  'loki',
-  {
-    provider: k8sProvider,
-    namespace: 'loki',
-    retention: '72h',
-    ingress: {
-      host: 'loki.k3s.local',
       className: 'traefik',
     },
   },

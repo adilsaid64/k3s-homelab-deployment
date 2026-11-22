@@ -31,6 +31,7 @@ After a successful deploy, configure local `kubectl` with:
 ```
 
 That script will:
+
 - install `kubectl` if it is missing
 - load kubeconfig from `.sst/outputs.json` (or SSH to the master as a fallback)
 - write `~/.kube/config` (with a timestamped backup)
@@ -65,6 +66,30 @@ pnpm sst remove --stage dev
 
 ![alt text](assests/k8s-nodes.png)
 
+### Apps
+
+| App                | Address                                                                    |
+| ------------------ | -------------------------------------------------------------------------- |
+| Grafana            | http://grafana.k3s.local (`GRAFANA_ADMIN_USER` / `GRAFANA_ADMIN_PASSWORD`) |
+| Excalidraw         | http://draw.k3s.local                                                      |
+| MinIO console      | http://minio.k3s.local                                                     |
+| Loki               | http://loki.k3s.local                                                      |
+| Tempo (traces UI)  | http://tempo.k3s.local (or Explore → Tempo in Grafana)                     |
+| OTLP gRPC / HTTP   | `<any-node-ip>:4317` / `<any-node-ip>:4318`                                |
+| MQTT broker (EMQX) | `mqtt://<any-node-ip>:1883` (anonymous allowed)                            |
+| MQTT websockets    | `ws://<any-node-ip>:8083`                                                  |
+| EMQX dashboard     | http://\<any-node-ip\>:18083 (`admin` / `admin`)                           |
+
+Publish a test MQTT message:
+
+```bash
+docker run --rm efrecon/mqtt-client pub -h 192.168.8.187 -t homelab/test -m 'hello'
+```
+
+In Grafana: **MQTT & Logs** dashboard, plus **Loki** / **Tempo** datasources (traces ↔ logs linked). Send OTLP traces to `http://<node-ip>:4318`.
+
+Logs: Grafana Alloy (DaemonSet) ships pod logs, k8s events, and host `/var/log` into Loki. In Explore → Loki try `{namespace="mqtt"}` or `{job="syslog"}`.
+
 ### Notes
 
 Add local DNS entry so Windows can resolve k3s ingress hostname without port-forwarding
@@ -72,3 +97,5 @@ Add local DNS entry so Windows can resolve k3s ingress hostname without port-for
 ```bash
 Add-Content "C:\Windows\System32\drivers\etc\hosts" "`n<Host-Machine-Proxmox-IP> <DNS-Entry-Hosted-On-K3s>"
 ```
+
+Or on the Beryl router hosts file / dnsmasq: `address=/k3s.local/192.168.8.187`

@@ -54,6 +54,7 @@ export class LokiStack extends pulumi.ComponentResource {
     this.release = new k8s.helm.v3.Release(
       name,
       {
+        name: 'loki',
         chart: 'loki',
         version: '6.16.0',
         namespace: this.namespace.metadata.name,
@@ -62,6 +63,7 @@ export class LokiStack extends pulumi.ComponentResource {
         },
         timeout: 600,
         values: {
+          fullnameOverride: 'loki',
           deploymentMode: 'SingleBinary',
           loki: {
             auth_enabled: false,
