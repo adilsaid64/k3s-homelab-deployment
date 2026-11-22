@@ -24,39 +24,23 @@ To verify, you can login into the UI proxmox as root or you can login with the `
 
 ## Connect to your Cluster
 
-Get your kubeconfig file from the master node and copy it to your local machine. Run the following command, replacing `<Your Master IP>` with the actual IP address of your master node. You can get this IP from Proxmox or SST outputs.
+After a successful deploy, configure local `kubectl` with:
 
 ```bash
- scp ubuntu@<Your Master IP>:/etc/rancher/k3s/k3s.yaml ~/.kube/config
+./scripts/setup-kubectl.sh dev
 ```
 
-Then update your kubeconfig file to point to the correct IP address of your master node. Open the `~/.kube/config` file in a text editor and replace the server URL with the IP address of your master node. It should look something like this:
+That script will:
+- install `kubectl` if it is missing
+- load kubeconfig from `.sst/outputs.json` (or SSH to the master as a fallback)
+- write `~/.kube/config` (with a timestamped backup)
+- rename the context to the stage name (default `dev`)
+- run `kubectl get nodes`
 
-```yaml
-apiVersion: v1
-clusters:
-  - cluster:
-      certificate-authority-data: ...
-      server: https://<Your Master IP>:6443
-    name: default
-```
-
-Save the file and verify
+Optional overrides:
 
 ```bash
-kubectl get nodes
-```
-
-You should see your nodes listed. You can list your contexts with the following command:
-
-```bash
-kubectl config get-contexts
-```
-
-And you can rename your context from default to something meaningful like dev/prod, or the name of your stack with the following command:
-
-```
-kubectl config rename-context default dev
+MASTER_IP=192.168.8.187 SSH_PRIVATE_KEY_PATH=~/.ssh/id_ed25519 ./scripts/setup-kubectl.sh dev
 ```
 
 ## Destroy Infra

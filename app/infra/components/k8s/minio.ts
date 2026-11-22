@@ -1,3 +1,4 @@
+import * as k8s from '@pulumi/kubernetes';
 import * as pulumi from '@pulumi/pulumi';
 
 export interface MinioIngressArgs {
@@ -8,102 +9,218 @@ export interface MinioIngressArgs {
 }
 
 export interface MinioStackArgs {
-  provider: kubernetes.Provider;
+  provider: k8s.Provider;
   namespace: string;
-
   rootUser?: pulumi.Input<string>;
   rootPassword?: pulumi.Input<string>;
-
   persistenceSize?: string;
-
+  image?: string;
   ingress?: MinioIngressArgs;
 }
 
 export class MinioStack extends pulumi.ComponentResource {
-  readonly namespace: kubernetes.core.v1.Namespace;
-  readonly release: kubernetes.helm.v3.Release;
+  readonly namespace: k8s.core.v1.Namespace;
+  readonly service: k8s.core.v1.Service;
+  readonly serviceName: pulumi.Output<string>;
 
   constructor(name: string, args: MinioStackArgs, opts?: pulumi.ComponentResourceOptions) {
     super('custom:infra:MinioStack', name, {}, opts);
 
-    this.namespace = new kubernetes.core.v1.Namespace(
+    const labels = { app: name };
+    const rootUser = args.rootUser ?? 'minio';
+    const rootPassword = args.rootPassword ?? 'minio123';
+    // Official minio/minio and quay.io/minio/minio are no longer publicly pullable.
+    const image = args.image ?? 'cgr.dev/chainguard/minio:latest';
+
+    this.namespace = new k8s.core.v1.Namespace(
       args.namespace,
-      {
-        metadata: { name: args.namespace },
-      },
-      {
-        provider: args.provider,
-        parent: this,
-      },
+      { metadata: { name: args.namespace } },
+      { provider: args.provider, parent: this },
     );
 
-    const ingress = args.ingress;
-
-    this.release = new kubernetes.helm.v3.Release(
-      name,
+    const secret = new k8s.core.v1.Secret(
+      `${name}-creds`,
       {
-        chart: 'minio',
-        version: '14.7.15',
-        namespace: this.namespace.metadata.name,
-        repositoryOpts: {
-          repo: 'https://charts.bitnami.com/bitnami',
+        metadata: {
+          name: `${name}-creds`,
+          namespace: args.namespace,
         },
-        values: {
-          mode: 'standalone',
+        stringData: {
+          rootUser,
+          rootPassword,
+        },
+      },
+      { provider: args.provider, parent: this, dependsOn: this.namespace },
+    );
 
-          auth: {
-            rootUser: args.rootUser ?? 'minio',
-            rootPassword: args.rootPassword ?? 'minio123',
-          },
-
-          persistence: {
-            enabled: true,
-            size: args.persistenceSize ?? '5Gi',
-          },
-
-          defaultBuckets: 'chunks,ruler,admin',
-
+    const pvc = new k8s.core.v1.PersistentVolumeClaim(
+      `${name}-data`,
+      {
+        metadata: {
+          name: `${name}-data`,
+          namespace: args.namespace,
+        },
+        spec: {
+          accessModes: ['ReadWriteOnce'],
           resources: {
             requests: {
-              cpu: '50m',
-              memory: '128Mi',
-            },
-            limits: {
-              cpu: '200m',
-              memory: '256Mi',
+              storage: args.persistenceSize ?? '5Gi',
             },
           },
+        },
+      },
+      { provider: args.provider, parent: this, dependsOn: this.namespace },
+    );
 
-          ingress: ingress
-            ? {
-                enabled: ingress.enabled ?? true,
-                ingressClassName: ingress.className ?? 'traefik',
-                hostname: ingress.host,
-                tls: ingress.tlsSecretName ? true : false,
-                extraTls: ingress.tlsSecretName
-                  ? [
-                      {
-                        hosts: [ingress.host],
-                        secretName: ingress.tlsSecretName,
-                      },
-                    ]
-                  : [],
-              }
-            : {
-                enabled: false,
+    const deployment = new k8s.apps.v1.Deployment(
+      name,
+      {
+        metadata: {
+          name,
+          namespace: args.namespace,
+          labels,
+          annotations: {
+            // Take ownership when replacing leftover Helm/SSA-managed fields.
+            'pulumi.com/patchForce': 'true',
+          },
+        },
+        spec: {
+          replicas: 1,
+          selector: { matchLabels: labels },
+          strategy: { type: 'Recreate' },
+          template: {
+            metadata: { labels },
+            spec: {
+              securityContext: {
+                fsGroup: 65532,
+                runAsUser: 65532,
+                runAsNonRoot: true,
               },
+              containers: [
+                {
+                  name: 'minio',
+                  image,
+                  args: ['server', '/data', '--console-address', ':9001'],
+                  ports: [
+                    { name: 'api', containerPort: 9000 },
+                    { name: 'console', containerPort: 9001 },
+                  ],
+                  env: [
+                    {
+                      name: 'MINIO_ROOT_USER',
+                      valueFrom: {
+                        secretKeyRef: { name: secret.metadata.name, key: 'rootUser' },
+                      },
+                    },
+                    {
+                      name: 'MINIO_ROOT_PASSWORD',
+                      valueFrom: {
+                        secretKeyRef: { name: secret.metadata.name, key: 'rootPassword' },
+                      },
+                    },
+                  ],
+                  volumeMounts: [{ name: 'data', mountPath: '/data' }],
+                  resources: {
+                    requests: { cpu: '100m', memory: '256Mi' },
+                    limits: { cpu: '500m', memory: '512Mi' },
+                  },
+                  readinessProbe: {
+                    httpGet: { path: '/minio/health/ready', port: 'api' },
+                    initialDelaySeconds: 10,
+                    periodSeconds: 10,
+                  },
+                  livenessProbe: {
+                    httpGet: { path: '/minio/health/live', port: 'api' },
+                    initialDelaySeconds: 20,
+                    periodSeconds: 20,
+                  },
+                },
+              ],
+              volumes: [
+                {
+                  name: 'data',
+                  persistentVolumeClaim: { claimName: pvc.metadata.name },
+                },
+              ],
+            },
+          },
         },
       },
       {
         provider: args.provider,
         parent: this,
-        dependsOn: this.namespace,
+        dependsOn: [this.namespace, secret, pvc],
       },
     );
+
+    this.service = new k8s.core.v1.Service(
+      name,
+      {
+        metadata: {
+          name,
+          namespace: args.namespace,
+          labels,
+        },
+        spec: {
+          selector: labels,
+          ports: [
+            { name: 'api', port: 9000, targetPort: 'api' },
+            { name: 'console', port: 9001, targetPort: 'console' },
+          ],
+        },
+      },
+      { provider: args.provider, parent: this, dependsOn: deployment },
+    );
+
+    this.serviceName = this.service.metadata.name;
+
+    if (args.ingress?.enabled !== false && args.ingress?.host) {
+      new k8s.networking.v1.Ingress(
+        name,
+        {
+          metadata: {
+            name,
+            namespace: args.namespace,
+            labels,
+          },
+          spec: {
+            ingressClassName: args.ingress.className ?? 'traefik',
+            rules: [
+              {
+                host: args.ingress.host,
+                http: {
+                  paths: [
+                    {
+                      path: '/',
+                      pathType: 'Prefix',
+                      backend: {
+                        service: {
+                          name,
+                          port: { name: 'console' },
+                        },
+                      },
+                    },
+                  ],
+                },
+              },
+            ],
+            tls: args.ingress.tlsSecretName
+              ? [
+                  {
+                    secretName: args.ingress.tlsSecretName,
+                    hosts: [args.ingress.host],
+                  },
+                ]
+              : undefined,
+          },
+        },
+        { provider: args.provider, parent: this, dependsOn: this.service },
+      );
+    }
 
     this.registerOutputs({
       namespace: this.namespace.metadata.name,
-      release: this.release.name,
+      serviceName: this.serviceName,
     });
   }
 }

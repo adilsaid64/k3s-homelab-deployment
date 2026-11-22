@@ -1,3 +1,4 @@
+import * as k8s from '@pulumi/kubernetes';
 import * as pulumi from '@pulumi/pulumi';
 
 export interface LokiIngressArgs {
@@ -9,36 +10,31 @@ export interface LokiIngressArgs {
 
 export interface PodPlacementArgs {
   nodeSelector?: Record<string, string>;
-  tolerations?: kubernetes.types.input.core.v1.Toleration[];
+  tolerations?: k8s.types.input.core.v1.Toleration[];
   resources?: {
     requests?: { cpu?: pulumi.Input<string>; memory?: pulumi.Input<string> };
     limits?: { cpu?: pulumi.Input<string>; memory?: pulumi.Input<string> };
   };
 }
 
-export interface LokiDistributedArgs {
-  provider: kubernetes.Provider;
+export interface LokiStackArgs {
+  provider: k8s.Provider;
   namespace: string;
-
-  minioServiceName?: string;
-  minioAccessKey?: pulumi.Input<string>;
-  minioSecretKey?: pulumi.Input<string>;
-
   retention?: string;
-
+  persistenceSize?: string;
   ingress?: LokiIngressArgs;
-
+  pod?: PodPlacementArgs;
   extraValues?: pulumi.Inputs;
 }
 
-export class LokiDistributedStack extends pulumi.ComponentResource {
-  readonly namespace: kubernetes.core.v1.Namespace;
-  readonly release: kubernetes.helm.v3.Release;
+export class LokiStack extends pulumi.ComponentResource {
+  readonly namespace: k8s.core.v1.Namespace;
+  readonly release: k8s.helm.v3.Release;
 
-  constructor(name: string, args: LokiDistributedArgs, opts?: pulumi.ComponentResourceOptions) {
-    super('custom:infra:LokiDistributedStack', name, {}, opts);
+  constructor(name: string, args: LokiStackArgs, opts?: pulumi.ComponentResourceOptions) {
+    super('custom:infra:LokiStack', name, {}, opts);
 
-    this.namespace = new kubernetes.core.v1.Namespace(
+    this.namespace = new k8s.core.v1.Namespace(
       args.namespace,
       {
         metadata: { name: args.namespace },
@@ -49,22 +45,13 @@ export class LokiDistributedStack extends pulumi.ComponentResource {
       },
     );
 
-    const minioHost = pulumi.interpolate`${args.minioServiceName ?? 'minio'}.${args.namespace}.svc.cluster.local:9000`;
-
-    const tinyResources = {
-      requests: {
-        cpu: '50m',
-        memory: '128Mi',
-      },
-      limits: {
-        cpu: '300m',
-        memory: '256Mi',
-      },
+    const ingress = args.ingress;
+    const resources = args.pod?.resources ?? {
+      requests: { cpu: '50m', memory: '128Mi' },
+      limits: { cpu: '500m', memory: '512Mi' },
     };
 
-    const ingress = args.ingress;
-
-    this.release = new kubernetes.helm.v3.Release(
+    this.release = new k8s.helm.v3.Release(
       name,
       {
         chart: 'loki',
@@ -73,18 +60,23 @@ export class LokiDistributedStack extends pulumi.ComponentResource {
         repositoryOpts: {
           repo: 'https://grafana.github.io/helm-charts',
         },
+        timeout: 600,
         values: {
-          deploymentMode: 'Distributed',
-
+          deploymentMode: 'SingleBinary',
           loki: {
             auth_enabled: false,
-
+            commonConfig: {
+              replication_factor: 1,
+            },
+            storage: {
+              type: 'filesystem',
+            },
             schemaConfig: {
               configs: [
                 {
                   from: '2024-04-01',
                   store: 'tsdb',
-                  object_store: 's3',
+                  object_store: 'filesystem',
                   schema: 'v13',
                   index: {
                     prefix: 'loki_index_',
@@ -93,73 +85,43 @@ export class LokiDistributedStack extends pulumi.ComponentResource {
                 },
               ],
             },
-
-            storage_config: {
-              aws: {
-                s3: pulumi.interpolate`s3://${args.minioAccessKey ?? 'minio'}:${args.minioSecretKey ?? 'minio123'}@${minioHost}`,
-                s3forcepathstyle: true,
-                insecure: true,
-              },
-            },
-
             limits_config: {
               retention_period: args.retention ?? '72h',
-              ingestion_rate_mb: 4,
-              ingestion_burst_size_mb: 6,
               allow_structured_metadata: true,
             },
-
-            querier: {
-              max_concurrent: 2,
+          },
+          singleBinary: {
+            replicas: 1,
+            persistence: {
+              enabled: true,
+              size: args.persistenceSize ?? '10Gi',
             },
+            resources,
+            nodeSelector: args.pod?.nodeSelector,
+            tolerations: args.pod?.tolerations,
           },
-
-          ingester: {
-            replicas: 1,
-            resources: tinyResources,
-          },
-
-          distributor: {
-            replicas: 1,
-            resources: tinyResources,
-          },
-
-          querier: {
-            replicas: 1,
-            resources: tinyResources,
-          },
-
-          queryFrontend: {
-            replicas: 1,
-            resources: tinyResources,
-          },
-
-          queryScheduler: {
-            replicas: 1,
-            resources: tinyResources,
-          },
-
-          compactor: {
-            replicas: 1,
-            resources: tinyResources,
-          },
-
-          indexGateway: {
-            replicas: 1,
-            resources: tinyResources,
-          },
-
+          backend: { replicas: 0 },
+          read: { replicas: 0 },
+          write: { replicas: 0 },
+          ingester: { replicas: 0 },
+          distributor: { replicas: 0 },
+          querier: { replicas: 0 },
+          queryFrontend: { replicas: 0 },
+          queryScheduler: { replicas: 0 },
+          compactor: { replicas: 0 },
+          indexGateway: { replicas: 0 },
           bloomPlanner: { replicas: 0 },
           bloomBuilder: { replicas: 0 },
           bloomGateway: { replicas: 0 },
-
+          // Default memcached caches request ~10Gi and will not schedule here.
+          chunksCache: { enabled: false },
+          resultsCache: { enabled: false },
           minio: { enabled: false },
-
+          lokiCanary: { enabled: false },
+          test: { enabled: false },
           gateway: {
-            service: {
-              type: 'ClusterIP',
-            },
-            resources: tinyResources,
+            enabled: true,
+            resources,
             ingress: ingress
               ? {
                   enabled: ingress.enabled ?? true,
@@ -167,12 +129,7 @@ export class LokiDistributedStack extends pulumi.ComponentResource {
                   hosts: [
                     {
                       host: ingress.host,
-                      paths: [
-                        {
-                          path: '/',
-                          pathType: 'Prefix',
-                        },
-                      ],
+                      paths: [{ path: '/', pathType: 'Prefix' }],
                     },
                   ],
                   tls: ingress.tlsSecretName
@@ -184,19 +141,8 @@ export class LokiDistributedStack extends pulumi.ComponentResource {
                       ]
                     : [],
                 }
-              : {
-                  enabled: false,
-                },
+              : { enabled: false },
           },
-
-          resultsCache: {
-            resources: tinyResources,
-          },
-
-          chunksCache: {
-            resources: tinyResources,
-          },
-
           ...(args.extraValues ?? {}),
         },
       },

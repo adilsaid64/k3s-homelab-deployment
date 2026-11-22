@@ -1,7 +1,7 @@
 import { KubePrometheusStack } from '../components/k8s/KubePrometheusStack';
 import { Excalidraw } from '../components/k8s/Excalidraw';
 import { MinioStack } from '../components/k8s/minio';
-import { LokiDistributedStack } from '../components/k8s/loki';
+import { LokiStack } from '../components/k8s/loki';
 import { clusterReady, k8sProvider } from './kubeconfig';
 
 const k8sDependsOn = [clusterReady];
@@ -140,7 +140,6 @@ export const minio = new MinioStack(
   {
     provider: k8sProvider,
     namespace: 'minio',
-
     ingress: {
       host: 'minio.k3s.local',
       className: 'traefik',
@@ -149,24 +148,16 @@ export const minio = new MinioStack(
   { dependsOn: k8sDependsOn },
 );
 
-export const loki = new LokiDistributedStack(
+export const loki = new LokiStack(
   'loki',
   {
     provider: k8sProvider,
     namespace: 'loki',
-
-    minioServiceName: 'minio',
-    minioAccessKey: 'minio',
-    minioSecretKey: 'minio123',
-
     retention: '72h',
-
     ingress: {
       host: 'loki.k3s.local',
       className: 'traefik',
     },
   },
-  {
-    dependsOn: [minio, ...k8sDependsOn],
-  },
+  { dependsOn: k8sDependsOn },
 );
