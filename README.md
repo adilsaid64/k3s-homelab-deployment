@@ -71,6 +71,8 @@ pnpm sst remove --stage dev
 | App                | Address                                                                    |
 | ------------------ | -------------------------------------------------------------------------- |
 | Grafana            | http://grafana.k3s.local (`GRAFANA_ADMIN_USER` / `GRAFANA_ADMIN_PASSWORD`) |
+| Authentik          | http://auth.k3s.local (`akadmin` / `AUTHENTIK_BOOTSTRAP_PASSWORD`)         |
+| Postgres           | `postgres.postgres.svc.cluster.local:5432` (cluster-internal)              |
 | Excalidraw         | http://draw.k3s.local                                                      |
 | MinIO console      | http://minio.k3s.local                                                     |
 | Loki               | http://loki.k3s.local                                                      |
@@ -89,6 +91,19 @@ docker run --rm efrecon/mqtt-client pub -h 192.168.8.187 -t homelab/test -m 'hel
 In Grafana: **MQTT & Logs** dashboard, plus **Loki** / **Tempo** datasources (traces ↔ logs linked). Send OTLP traces to `http://<node-ip>:4318`.
 
 Logs: Grafana Alloy (DaemonSet) ships pod logs, k8s events, and host `/var/log` into Loki. In Explore → Loki try `{namespace="mqtt"}` or `{job="syslog"}`.
+
+### Authentik (app SSO)
+
+Infra auth (Proxmox) stays separate. Authentik is for cluster app dashboards.
+
+Bootstrap is automated via Helm (`AUTHENTIK_BOOTSTRAP_*` in `.env`) on an empty DB — no OOBE wizard.
+
+1. Log in at http://auth.k3s.local as `akadmin` / `AUTHENTIK_BOOTSTRAP_PASSWORD`.
+2. Use `AUTHENTIK_BOOTSTRAP_TOKEN` as the API token (`AUTHENTIK_TOKEN` for Pulumi Authentik provider).
+3. Create an **OIDC Provider** + **Application** for Grafana (and later MinIO).
+4. For apps without OIDC (Excalidraw, EMQX UI), add an Authentik **Proxy outpost** + Traefik forward-auth.
+
+DNS wildcard (recommended): `address=/k3s.local/192.168.8.187` (or `home.lab` once renamed).
 
 ### Notes
 

@@ -7,6 +7,8 @@ import { LokiStack } from '../components/k8s/loki';
 import { AlloyStack } from '../components/k8s/alloy';
 import { TempoStack } from '../components/k8s/tempo';
 import { EmqxStack } from '../components/k8s/emqx';
+import { AuthentikStack } from '../components/k8s/authentik';
+import { PostgresStack } from '../components/k8s/postgres';
 import { clusterReady, k8sProvider } from './kubeconfig';
 
 const k8sDependsOn = [clusterReady];
@@ -14,6 +16,56 @@ const k8sDependsOn = [clusterReady];
 if (!process.env.GRAFANA_ADMIN_PASSWORD) {
   throw new Error('GRAFANA_ADMIN_PASSWORD must be set in .env');
 }
+if (!process.env.AUTHENTIK_SECRET_KEY || process.env.AUTHENTIK_SECRET_KEY.length < 50) {
+  throw new Error('AUTHENTIK_SECRET_KEY must be set in .env (min 50 chars)');
+}
+if (!process.env.AUTHENTIK_BOOTSTRAP_TOKEN) {
+  throw new Error('AUTHENTIK_BOOTSTRAP_TOKEN must be set in .env (openssl rand -hex 32)');
+}
+if (!process.env.AUTHENTIK_BOOTSTRAP_PASSWORD) {
+  throw new Error('AUTHENTIK_BOOTSTRAP_PASSWORD must be set in .env');
+}
+const postgresPassword = process.env.POSTGRES_PASSWORD ?? process.env.AUTHENTIK_POSTGRES_PASSWORD;
+if (!postgresPassword) {
+  throw new Error('POSTGRES_PASSWORD must be set in .env');
+}
+
+export const postgres = new PostgresStack(
+  'postgres',
+  {
+    provider: k8sProvider,
+    namespace: 'postgres',
+    database: 'authentik',
+    username: 'authentik',
+    password: pulumi.secret(postgresPassword),
+  },
+  { dependsOn: k8sDependsOn },
+);
+
+export const authentik = new AuthentikStack(
+  'authentik',
+  {
+    provider: k8sProvider,
+    namespace: 'authentik',
+    secretKey: pulumi.secret(process.env.AUTHENTIK_SECRET_KEY),
+    bootstrap: {
+      token: pulumi.secret(process.env.AUTHENTIK_BOOTSTRAP_TOKEN),
+      password: pulumi.secret(process.env.AUTHENTIK_BOOTSTRAP_PASSWORD),
+      email: process.env.AUTHENTIK_BOOTSTRAP_EMAIL ?? 'admin@k3s.local',
+    },
+    postgres: {
+      host: postgres.host,
+      database: postgres.database,
+      username: postgres.username,
+      password: postgres.password,
+    },
+    ingress: {
+      host: 'auth.k3s.local',
+      className: 'traefik',
+    },
+  },
+  { dependsOn: [...k8sDependsOn, postgres] },
+);
 
 export const emqx = new EmqxStack(
   'emqx',
@@ -26,6 +78,7 @@ export const emqx = new EmqxStack(
   },
   { dependsOn: k8sDependsOn },
 );
+
 export const loki = new LokiStack(
   'loki',
   {
