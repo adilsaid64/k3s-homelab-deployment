@@ -1,3 +1,4 @@
+import * as pulumi from '@pulumi/pulumi';
 import { KubePrometheusStack } from '../components/k8s/KubePrometheusStack';
 import { Excalidraw } from '../components/k8s/Excalidraw';
 import { MinioStack } from '../components/k8s/minio';
@@ -5,6 +6,10 @@ import { LokiStack } from '../components/k8s/loki';
 import { clusterReady, k8sProvider } from './kubeconfig';
 
 const k8sDependsOn = [clusterReady];
+
+if (!process.env.GRAFANA_ADMIN_PASSWORD) {
+  throw new Error('GRAFANA_ADMIN_PASSWORD must be set in .env');
+}
 
 export const kubePromStack = new KubePrometheusStack(
   'monitoring-stack',
@@ -14,6 +19,8 @@ export const kubePromStack = new KubePrometheusStack(
 
     grafana: {
       enabled: true,
+      adminUser: process.env.GRAFANA_ADMIN_USER ?? 'admin',
+      adminPassword: pulumi.secret(process.env.GRAFANA_ADMIN_PASSWORD),
       ingress: {
         host: 'grafana.k3s.local',
         className: 'traefik',

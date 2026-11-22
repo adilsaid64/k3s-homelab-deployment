@@ -35,6 +35,8 @@ export interface KubePrometheusStackArgs {
   namespace?: string;
   grafana?: {
     enabled?: boolean;
+    adminUser?: pulumi.Input<string>;
+    adminPassword?: pulumi.Input<string>;
     ingress?: GrafanaIngressArgs;
     scheduling?: SchedulingArgs;
     pod?: PodPlacementArgs;
@@ -108,6 +110,8 @@ export class KubePrometheusStack extends pulumi.ComponentResource {
 
           grafana: {
             enabled: args.grafana?.enabled ?? true,
+            adminUser: args.grafana?.adminUser ?? 'admin',
+            adminPassword: args.grafana?.adminPassword,
             ...podConfig(args.grafana?.pod),
             ingress: grafanaIngress
               ? {
