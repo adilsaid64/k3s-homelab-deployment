@@ -6,6 +6,7 @@ export interface MinioIngressArgs {
   host: string;
   className?: string;
   tlsSecretName?: string;
+  annotations?: Record<string, string>;
 }
 
 export interface MinioStackArgs {
@@ -16,6 +17,8 @@ export interface MinioStackArgs {
   persistenceSize?: string;
   image?: string;
   ingress?: MinioIngressArgs;
+  /** Extra container env (e.g. Authentik OIDC). */
+  extraEnv?: pulumi.Input<k8s.types.input.core.v1.EnvVar[]>;
 }
 
 export class MinioStack extends pulumi.ComponentResource {
@@ -105,20 +108,23 @@ export class MinioStack extends pulumi.ComponentResource {
                     { name: 'api', containerPort: 9000 },
                     { name: 'console', containerPort: 9001 },
                   ],
-                  env: [
-                    {
-                      name: 'MINIO_ROOT_USER',
-                      valueFrom: {
-                        secretKeyRef: { name: secret.metadata.name, key: 'rootUser' },
+                  env: pulumi
+                    .all([secret.metadata.name, args.extraEnv ?? []])
+                    .apply(([secretName, extra]) => [
+                      {
+                        name: 'MINIO_ROOT_USER',
+                        valueFrom: {
+                          secretKeyRef: { name: secretName, key: 'rootUser' },
+                        },
                       },
-                    },
-                    {
-                      name: 'MINIO_ROOT_PASSWORD',
-                      valueFrom: {
-                        secretKeyRef: { name: secret.metadata.name, key: 'rootPassword' },
+                      {
+                        name: 'MINIO_ROOT_PASSWORD',
+                        valueFrom: {
+                          secretKeyRef: { name: secretName, key: 'rootPassword' },
+                        },
                       },
-                    },
-                  ],
+                      ...extra,
+                    ]),
                   volumeMounts: [{ name: 'data', mountPath: '/data' }],
                   resources: {
                     requests: { cpu: '100m', memory: '256Mi' },
@@ -182,6 +188,7 @@ export class MinioStack extends pulumi.ComponentResource {
             name,
             namespace: args.namespace,
             labels,
+            annotations: args.ingress.annotations,
           },
           spec: {
             ingressClassName: args.ingress.className ?? 'traefik',

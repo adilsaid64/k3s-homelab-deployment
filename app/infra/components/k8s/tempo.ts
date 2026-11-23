@@ -6,6 +6,7 @@ export interface TempoIngressArgs {
   host: string;
   className?: string;
   tlsSecretName?: string;
+  annotations?: Record<string, string>;
 }
 
 export interface PodPlacementArgs {
@@ -122,6 +123,7 @@ export class TempoStack extends pulumi.ComponentResource {
           metadata: {
             name: 'tempo',
             namespace: args.namespace,
+            annotations: ingress.annotations,
           },
           spec: {
             ingressClassName: ingress.className ?? 'traefik',

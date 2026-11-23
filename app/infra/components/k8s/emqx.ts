@@ -1,6 +1,14 @@
 import * as k8s from '@pulumi/kubernetes';
 import * as pulumi from '@pulumi/pulumi';
 
+export interface EmqxDashboardIngressArgs {
+  enabled?: boolean;
+  host: string;
+  className?: string;
+  tlsSecretName?: string;
+  annotations?: Record<string, string>;
+}
+
 export interface EmqxStackArgs {
   provider: k8s.Provider;
   namespace?: string;
@@ -10,6 +18,8 @@ export interface EmqxStackArgs {
   dashboardPassword?: pulumi.Input<string>;
   /** When true (default), LAN clients can publish/subscribe without auth. */
   allowAnonymous?: boolean;
+  /** Optional Traefik ingress for the dashboard (SSO / nicer URL). */
+  dashboardIngress?: EmqxDashboardIngressArgs;
   /**
    * Create a ServiceMonitor for mqtt-exporter.
    * Pass false when Prometheus Operator CRDs are not installed yet.
@@ -158,6 +168,51 @@ export class EmqxStack extends pulumi.ComponentResource {
     );
 
     this.serviceName = this.service.metadata.name;
+
+    if (args.dashboardIngress?.enabled !== false && args.dashboardIngress?.host) {
+      new k8s.networking.v1.Ingress(
+        `${name}-dashboard`,
+        {
+          metadata: {
+            name: `${name}-dashboard`,
+            namespace: nsName,
+            labels,
+            annotations: args.dashboardIngress.annotations,
+          },
+          spec: {
+            ingressClassName: args.dashboardIngress.className ?? 'traefik',
+            rules: [
+              {
+                host: args.dashboardIngress.host,
+                http: {
+                  paths: [
+                    {
+                      path: '/',
+                      pathType: 'Prefix',
+                      backend: {
+                        service: {
+                          name,
+                          port: { name: 'dashboard' },
+                        },
+                      },
+                    },
+                  ],
+                },
+              },
+            ],
+            tls: args.dashboardIngress.tlsSecretName
+              ? [
+                  {
+                    secretName: args.dashboardIngress.tlsSecretName,
+                    hosts: [args.dashboardIngress.host],
+                  },
+                ]
+              : undefined,
+          },
+        },
+        { provider: args.provider, parent: this, dependsOn: this.service },
+      );
+    }
 
     const exporterLabels = { app: `${name}-exporter` };
     const exporter = new k8s.apps.v1.Deployment(

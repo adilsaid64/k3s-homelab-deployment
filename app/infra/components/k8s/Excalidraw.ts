@@ -6,6 +6,7 @@ export interface ExcalidrawIngressArgs {
   host: string;
   className?: string;
   tlsSecretName?: string;
+  annotations?: Record<string, string>;
 }
 
 export interface ResourceRequirementsArgs {
@@ -115,6 +116,7 @@ export class Excalidraw extends pulumi.ComponentResource {
         {
           metadata: {
             namespace: nsName,
+            annotations: args.ingress.annotations,
           },
           spec: {
             ingressClassName: args.ingress.className ?? 'traefik',

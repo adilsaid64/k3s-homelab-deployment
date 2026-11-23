@@ -43,6 +43,12 @@ export interface KubePrometheusStackArgs {
     ingress?: GrafanaIngressArgs;
     scheduling?: SchedulingArgs;
     pod?: PodPlacementArgs;
+    /** Merged into Helm `grafana.grafana.ini` (e.g. Authentik generic_oauth). */
+    grafanaIni?: pulumi.Inputs;
+    /** Extra Grafana container env (preferred for OAuth client secrets). */
+    env?: pulumi.Input<Record<string, pulumi.Input<string>>>;
+    /** Homelab: allow secrets in values when env expansion is impractical. */
+    assertNoLeakedSecrets?: boolean;
   };
   prometheus?: {
     retention?: string;
@@ -119,6 +125,9 @@ export class KubePrometheusStack extends pulumi.ComponentResource {
             adminPassword: args.grafana?.adminPassword,
             plugins: args.grafana?.plugins,
             additionalDataSources: args.grafana?.additionalDataSources,
+            ...(args.grafana?.grafanaIni ? { 'grafana.ini': args.grafana.grafanaIni } : {}),
+            ...(args.grafana?.env ? { env: args.grafana.env } : {}),
+            assertNoLeakedSecrets: args.grafana?.assertNoLeakedSecrets ?? true,
             ...(args.grafana?.dashboards
               ? {
                   dashboardProviders: {

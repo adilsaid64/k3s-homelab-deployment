@@ -6,6 +6,7 @@ export interface LokiIngressArgs {
   host: string;
   className?: string;
   tlsSecretName?: string;
+  annotations?: Record<string, string>;
 }
 
 export interface PodPlacementArgs {
@@ -128,6 +129,7 @@ export class LokiStack extends pulumi.ComponentResource {
               ? {
                   enabled: ingress.enabled ?? true,
                   ingressClassName: ingress.className ?? 'traefik',
+                  annotations: ingress.annotations,
                   hosts: [
                     {
                       host: ingress.host,

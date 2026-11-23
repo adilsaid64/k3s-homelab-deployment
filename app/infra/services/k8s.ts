@@ -8,8 +8,14 @@ import { AlloyStack } from '../components/k8s/alloy';
 import { TempoStack } from '../components/k8s/tempo';
 import { EmqxStack } from '../components/k8s/emqx';
 import { AuthentikStack } from '../components/k8s/authentik';
+import { HomelabSso } from '../components/authentik/homelabSso';
 import { PostgresStack } from '../components/k8s/postgres';
 import { clusterReady, k8sProvider } from './kubeconfig';
+
+/** Traefik middleware annotation: local Middleware named `authentik` in that namespace. */
+const forwardAuthAnnotation = (namespace: string): Record<string, string> => ({
+  'traefik.ingress.kubernetes.io/router.middlewares': `${namespace}-authentik@kubernetescrd`,
+});
 
 const k8sDependsOn = [clusterReady];
 
@@ -67,12 +73,19 @@ export const authentik = new AuthentikStack(
   { dependsOn: [...k8sDependsOn, postgres] },
 );
 
+const authentikPublicUrl = process.env.AUTHENTIK_URL ?? 'http://auth.k3s.local';
+
 export const emqx = new EmqxStack(
   'emqx',
   {
     provider: k8sProvider,
     namespace: 'mqtt',
     allowAnonymous: true,
+    dashboardIngress: {
+      host: 'emqx.k3s.local',
+      className: 'traefik',
+      annotations: forwardAuthAnnotation('mqtt'),
+    },
     // ServiceMonitor needs Prometheus Operator CRDs from kube-prometheus-stack.
     createServiceMonitor: false,
   },
@@ -88,6 +101,7 @@ export const loki = new LokiStack(
     ingress: {
       host: 'loki.k3s.local',
       className: 'traefik',
+      annotations: forwardAuthAnnotation('loki'),
     },
   },
   { dependsOn: k8sDependsOn },
@@ -112,9 +126,49 @@ export const tempo = new TempoStack(
     ingress: {
       host: 'tempo.k3s.local',
       className: 'traefik',
+      annotations: forwardAuthAnnotation('tempo'),
     },
   },
   { dependsOn: k8sDependsOn },
+);
+
+export const excalidraw = new Excalidraw(
+  'excalidraw',
+  {
+    provider: k8sProvider,
+    namespace: 'exclaidraw',
+    ingress: {
+      enabled: true,
+      host: 'draw.k3s.local',
+      className: 'traefik',
+      annotations: forwardAuthAnnotation('exclaidraw'),
+    },
+    pod: {
+      resources: {
+        requests: {
+          cpu: '50m',
+          memory: '64Mi',
+        },
+        limits: {
+          cpu: '200m',
+          memory: '128Mi',
+        },
+      },
+    },
+  },
+  { dependsOn: k8sDependsOn },
+);
+
+/** OIDC (Grafana/MinIO) + domain forward-auth (draw/tempo/loki/emqx). */
+export const homelabSso = new HomelabSso(
+  'homelab-sso',
+  {
+    provider: k8sProvider,
+    authentikUrl: authentikPublicUrl,
+    authentikToken: pulumi.secret(process.env.AUTHENTIK_BOOTSTRAP_TOKEN!),
+    forwardAuthNamespaces: ['exclaidraw', 'tempo', 'loki', 'mqtt'],
+  },
+  { dependsOn: [authentik, excalidraw, tempo, loki, emqx] },
 );
 
 const mqttDashboard = JSON.stringify({
@@ -257,6 +311,8 @@ export const kubePromStack = new KubePrometheusStack(
         host: 'grafana.k3s.local',
         className: 'traefik',
       },
+      grafanaIni: homelabSso.grafanaIni,
+      env: homelabSso.grafanaEnv,
       pod: {
         resources: {
           requests: {
@@ -345,7 +401,7 @@ export const kubePromStack = new KubePrometheusStack(
       },
     },
   },
-  { dependsOn: [...k8sDependsOn, loki, tempo, emqx] },
+  { dependsOn: [...k8sDependsOn, loki, tempo, emqx, homelabSso] },
 );
 
 // Scrape MQTT exporter once Prometheus Operator CRDs exist.
@@ -380,32 +436,6 @@ new k8s.apiextensions.CustomResource(
   },
   { provider: k8sProvider, dependsOn: [emqx, kubePromStack] },
 );
-export const excalidraw = new Excalidraw(
-  'excalidraw',
-  {
-    provider: k8sProvider,
-    namespace: 'exclaidraw',
-    ingress: {
-      enabled: true,
-      host: 'draw.k3s.local',
-      className: 'traefik',
-    },
-    pod: {
-      resources: {
-        requests: {
-          cpu: '50m',
-          memory: '64Mi',
-        },
-        limits: {
-          cpu: '200m',
-          memory: '128Mi',
-        },
-      },
-    },
-  },
-  { dependsOn: k8sDependsOn },
-);
-
 export const minio = new MinioStack(
   'minio',
   {
@@ -415,6 +445,7 @@ export const minio = new MinioStack(
       host: 'minio.k3s.local',
       className: 'traefik',
     },
+    extraEnv: homelabSso.minioOidcEnv,
   },
-  { dependsOn: k8sDependsOn },
+  { dependsOn: [...k8sDependsOn, homelabSso] },
 );
