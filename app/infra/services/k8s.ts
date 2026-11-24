@@ -12,11 +12,6 @@ import { HomelabSso } from '../components/authentik/homelabSso';
 import { PostgresStack } from '../components/k8s/postgres';
 import { clusterReady, k8sProvider } from './kubeconfig';
 
-/** Traefik middleware annotation: local Middleware named `authentik` in that namespace. */
-const forwardAuthAnnotation = (namespace: string): Record<string, string> => ({
-  'traefik.ingress.kubernetes.io/router.middlewares': `${namespace}-authentik@kubernetescrd`,
-});
-
 const k8sDependsOn = [clusterReady];
 
 if (!process.env.GRAFANA_ADMIN_PASSWORD) {
@@ -41,8 +36,6 @@ export const postgres = new PostgresStack(
   {
     provider: k8sProvider,
     namespace: 'postgres',
-    database: 'authentik',
-    username: 'authentik',
     password: pulumi.secret(postgresPassword),
   },
   { dependsOn: k8sDependsOn },
@@ -59,12 +52,7 @@ export const authentik = new AuthentikStack(
       password: pulumi.secret(process.env.AUTHENTIK_BOOTSTRAP_PASSWORD),
       email: process.env.AUTHENTIK_BOOTSTRAP_EMAIL ?? 'admin@k3s.local',
     },
-    postgres: {
-      host: postgres.host,
-      database: postgres.database,
-      username: postgres.username,
-      password: postgres.password,
-    },
+    postgres,
     ingress: {
       host: 'auth.k3s.local',
       className: 'traefik',
@@ -84,7 +72,6 @@ export const emqx = new EmqxStack(
     dashboardIngress: {
       host: 'emqx.k3s.local',
       className: 'traefik',
-      annotations: forwardAuthAnnotation('mqtt'),
     },
     // ServiceMonitor needs Prometheus Operator CRDs from kube-prometheus-stack.
     createServiceMonitor: false,
@@ -101,7 +88,6 @@ export const loki = new LokiStack(
     ingress: {
       host: 'loki.k3s.local',
       className: 'traefik',
-      annotations: forwardAuthAnnotation('loki'),
     },
   },
   { dependsOn: k8sDependsOn },
@@ -126,7 +112,6 @@ export const tempo = new TempoStack(
     ingress: {
       host: 'tempo.k3s.local',
       className: 'traefik',
-      annotations: forwardAuthAnnotation('tempo'),
     },
   },
   { dependsOn: k8sDependsOn },
@@ -141,7 +126,6 @@ export const excalidraw = new Excalidraw(
       enabled: true,
       host: 'draw.k3s.local',
       className: 'traefik',
-      annotations: forwardAuthAnnotation('exclaidraw'),
     },
     pod: {
       resources: {
@@ -159,16 +143,29 @@ export const excalidraw = new Excalidraw(
   { dependsOn: k8sDependsOn },
 );
 
-/** OIDC (Grafana/MinIO) + domain forward-auth (draw/tempo/loki/emqx). */
+export const minio = new MinioStack(
+  'minio',
+  {
+    provider: k8sProvider,
+    namespace: 'minio',
+    rootUser: process.env.MINIO_ROOT_USER ?? 'minio',
+    rootPassword: pulumi.secret(process.env.MINIO_ROOT_PASSWORD ?? 'Password1234!'),
+    ingress: {
+      host: 'minio.k3s.local',
+      className: 'traefik',
+    },
+  },
+  { dependsOn: k8sDependsOn },
+);
+
+/** Native OIDC only (Grafana). Other UIs keep their own login. */
 export const homelabSso = new HomelabSso(
   'homelab-sso',
   {
-    provider: k8sProvider,
     authentikUrl: authentikPublicUrl,
     authentikToken: pulumi.secret(process.env.AUTHENTIK_BOOTSTRAP_TOKEN!),
-    forwardAuthNamespaces: ['exclaidraw', 'tempo', 'loki', 'mqtt'],
   },
-  { dependsOn: [authentik, excalidraw, tempo, loki, emqx] },
+  { dependsOn: [authentik] },
 );
 
 const mqttDashboard = JSON.stringify({
@@ -435,17 +432,4 @@ new k8s.apiextensions.CustomResource(
     },
   },
   { provider: k8sProvider, dependsOn: [emqx, kubePromStack] },
-);
-export const minio = new MinioStack(
-  'minio',
-  {
-    provider: k8sProvider,
-    namespace: 'minio',
-    ingress: {
-      host: 'minio.k3s.local',
-      className: 'traefik',
-    },
-    extraEnv: homelabSso.minioOidcEnv,
-  },
-  { dependsOn: [...k8sDependsOn, homelabSso] },
 );

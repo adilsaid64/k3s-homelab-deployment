@@ -4,16 +4,34 @@ import * as pulumi from '@pulumi/pulumi';
 export interface PostgresStackArgs {
   provider: k8s.Provider;
   namespace?: string;
-  /** Default database created on first boot. */
-  database?: string;
+  /** Cluster admin role created by initdb (default `postgres`). */
   username?: string;
   password: pulumi.Input<string>;
   image?: string;
   persistenceSize?: string;
 }
 
+export interface CreateDbArgs {
+  /** Database name to create. */
+  database: string;
+  /** Login role that owns the database. */
+  username: string;
+  password: pulumi.Input<string>;
+}
+
+/** Connection info for a database provisioned via {@link PostgresStack.createDb}. */
+export interface PostgresDatabase {
+  host: pulumi.Output<string>;
+  port: number;
+  database: string;
+  username: string;
+  password: pulumi.Input<string>;
+  /** Becomes complete once CREATE ROLE/DATABASE has succeeded. */
+  ready: pulumi.Resource;
+}
+
 /**
- * Standalone Postgres for shared app use (Authentik, etc.).
+ * Shared Postgres for homelab apps.
  * Official image only — no Bitnami / Helm subchart.
  *
  * Notes for this cluster (Ubuntu 26.04 + containerd AppArmor stacking):
@@ -21,6 +39,8 @@ export interface PostgresStackArgs {
  *   (`could not signal for checkpoint: Permission denied`). Use Unconfined.
  * - Image entrypoint `gosu` also hangs under that profile, so we start as
  *   uid 999 and run initdb/postgres directly.
+ *
+ * App databases are not created at init — call {@link createDb} from each consumer.
  */
 export class PostgresStack extends pulumi.ComponentResource {
   readonly namespace: k8s.core.v1.Namespace;
@@ -28,36 +48,43 @@ export class PostgresStack extends pulumi.ComponentResource {
   readonly serviceName: pulumi.Output<string>;
   /** Cluster DNS: `<service>.<namespace>.svc.cluster.local` */
   readonly host: pulumi.Output<string>;
-  readonly database: string;
+  readonly port = 5432;
+  /** Superuser / initdb role. */
   readonly username: string;
   readonly password: pulumi.Input<string>;
+
+  private readonly provider: k8s.Provider;
+  private readonly nsName: string;
+  private readonly image: string;
+  private readonly sts: k8s.apps.v1.StatefulSet;
+  private readonly adminSecret: k8s.core.v1.Secret;
 
   constructor(name: string, args: PostgresStackArgs, opts?: pulumi.ComponentResourceOptions) {
     super('custom:infra:PostgresStack', name, {}, opts);
 
-    const nsName = args.namespace ?? 'postgres';
+    this.provider = args.provider;
+    this.nsName = args.namespace ?? 'postgres';
     const labels = { app: name };
-    this.database = args.database ?? 'postgres';
     this.username = args.username ?? 'postgres';
     this.password = args.password;
-    const image = args.image ?? 'postgres:16-bookworm';
+    this.image = args.image ?? 'postgres:16-bookworm';
     const pgUid = 999;
 
     this.namespace = new k8s.core.v1.Namespace(
-      nsName,
-      { metadata: { name: nsName } },
+      this.nsName,
+      { metadata: { name: this.nsName } },
       { provider: args.provider, parent: this },
     );
 
-    const secret = new k8s.core.v1.Secret(
+    this.adminSecret = new k8s.core.v1.Secret(
       `${name}-credentials`,
       {
         metadata: {
           name: `${name}-credentials`,
-          namespace: nsName,
+          namespace: this.nsName,
         },
         stringData: {
-          POSTGRES_DB: this.database,
+          POSTGRES_DB: 'postgres',
           POSTGRES_USER: this.username,
           POSTGRES_PASSWORD: args.password,
         },
@@ -77,14 +104,6 @@ if [ ! -s "\$PGDATA/PG_VERSION" ]; then
   initdb -D "\$PGDATA" --username="\$POSTGRES_USER" --pwfile=<(printf '%s\\n' "\$POSTGRES_PASSWORD")
   echo "listen_addresses = '*'" >> "\$PGDATA/postgresql.conf"
   echo "host all all all scram-sha-256" >> "\$PGDATA/pg_hba.conf"
-
-  pg_ctl -D "\$PGDATA" -o "-c listen_addresses='127.0.0.1'" -w start
-  # initdb only creates "postgres"; always ensure POSTGRES_DB exists
-  # (even when it matches the username — Authentik uses database=authentik).
-  if [ "\$POSTGRES_DB" != "postgres" ]; then
-    createdb -U "\$POSTGRES_USER" "\$POSTGRES_DB" || true
-  fi
-  pg_ctl -D "\$PGDATA" -m fast -w stop
   echo "Postgres init complete"
 fi
 
@@ -96,7 +115,7 @@ exec postgres -D "\$PGDATA" -c listen_addresses='*'
       {
         metadata: {
           name: `${name}-start`,
-          namespace: nsName,
+          namespace: this.nsName,
         },
         data: {
           'start.sh': startScript,
@@ -105,12 +124,12 @@ exec postgres -D "\$PGDATA" -c listen_addresses='*'
       { provider: args.provider, parent: this, dependsOn: this.namespace },
     );
 
-    const sts = new k8s.apps.v1.StatefulSet(
+    this.sts = new k8s.apps.v1.StatefulSet(
       `${name}-sts`,
       {
         metadata: {
           name,
-          namespace: nsName,
+          namespace: this.nsName,
           labels,
           annotations: {
             'pulumi.com/patchForce': 'true',
@@ -134,10 +153,10 @@ exec postgres -D "\$PGDATA" -c listen_addresses='*'
               containers: [
                 {
                   name: 'postgresql',
-                  image,
+                  image: this.image,
                   command: ['bash', '/scripts/start.sh'],
                   ports: [{ name: 'postgres', containerPort: 5432 }],
-                  envFrom: [{ secretRef: { name: secret.metadata.name } }],
+                  envFrom: [{ secretRef: { name: this.adminSecret.metadata.name } }],
                   env: [{ name: 'PGDATA', value: '/var/lib/postgresql/data/pgdata' }],
                   volumeMounts: [
                     { name: 'data', mountPath: '/var/lib/postgresql/data' },
@@ -149,20 +168,20 @@ exec postgres -D "\$PGDATA" -c listen_addresses='*'
                   },
                   startupProbe: {
                     exec: {
-                      command: ['pg_isready', '-U', this.username, '-d', this.database],
+                      command: ['pg_isready', '-U', this.username, '-d', 'postgres'],
                     },
                     failureThreshold: 60,
                     periodSeconds: 5,
                   },
                   readinessProbe: {
                     exec: {
-                      command: ['pg_isready', '-U', this.username, '-d', this.database],
+                      command: ['pg_isready', '-U', this.username, '-d', 'postgres'],
                     },
                     periodSeconds: 10,
                   },
                   livenessProbe: {
                     exec: {
-                      command: ['pg_isready', '-U', this.username, '-d', this.database],
+                      command: ['pg_isready', '-U', this.username, '-d', 'postgres'],
                     },
                     periodSeconds: 30,
                     failureThreshold: 6,
@@ -198,7 +217,7 @@ exec postgres -D "\$PGDATA" -c listen_addresses='*'
       {
         provider: args.provider,
         parent: this,
-        dependsOn: [this.namespace, secret, config],
+        dependsOn: [this.namespace, this.adminSecret, config],
       },
     );
 
@@ -207,7 +226,7 @@ exec postgres -D "\$PGDATA" -c listen_addresses='*'
       {
         metadata: {
           name,
-          namespace: nsName,
+          namespace: this.nsName,
           labels,
         },
         spec: {
@@ -215,18 +234,142 @@ exec postgres -D "\$PGDATA" -c listen_addresses='*'
           ports: [{ name: 'postgres', port: 5432, targetPort: 'postgres' }],
         },
       },
-      { provider: args.provider, parent: this, dependsOn: sts },
+      { provider: args.provider, parent: this, dependsOn: this.sts },
     );
 
     this.serviceName = this.service.metadata.name;
-    this.host = pulumi.interpolate`${this.serviceName}.${nsName}.svc.cluster.local`;
+    this.host = pulumi.interpolate`${this.serviceName}.${this.nsName}.svc.cluster.local`;
 
     this.registerOutputs({
       namespace: this.namespace.metadata.name,
       serviceName: this.serviceName,
       host: this.host,
-      database: this.database,
       username: this.username,
     });
+  }
+
+  /**
+   * Idempotently create a database + login role for an application.
+   * Runs a one-shot Job in the Postgres namespace against the admin credentials.
+   */
+  createDb(
+    name: string,
+    args: CreateDbArgs,
+    opts?: pulumi.ComponentResourceOptions,
+  ): PostgresDatabase {
+    const parent = opts?.parent ?? this;
+
+    const dbSecret = new k8s.core.v1.Secret(
+      `${name}-creds`,
+      {
+        metadata: {
+          name: `${name}-creds`,
+          namespace: this.nsName,
+        },
+        stringData: {
+          DATABASE: args.database,
+          USERNAME: args.username,
+          PASSWORD: args.password,
+        },
+      },
+      { provider: this.provider, parent, dependsOn: this.namespace },
+    );
+
+    const job = new k8s.batch.v1.Job(
+      `${name}-create`,
+      {
+        metadata: {
+          name: `${name}-create`,
+          namespace: this.nsName,
+          annotations: {
+            'pulumi.com/patchForce': 'true',
+          },
+        },
+        spec: {
+          backoffLimit: 6,
+          ttlSecondsAfterFinished: 600,
+          template: {
+            spec: {
+              restartPolicy: 'OnFailure',
+              containers: [
+                {
+                  name: 'createdb',
+                  image: this.image,
+                  env: [
+                    { name: 'PGHOST', value: this.host },
+                    { name: 'PGPORT', value: String(this.port) },
+                    { name: 'PGUSER', value: this.username },
+                    { name: 'PGDATABASE', value: 'postgres' },
+                    {
+                      name: 'PGPASSWORD',
+                      valueFrom: {
+                        secretKeyRef: {
+                          name: this.adminSecret.metadata.name,
+                          key: 'POSTGRES_PASSWORD',
+                        },
+                      },
+                    },
+                    {
+                      name: 'APP_DB',
+                      valueFrom: {
+                        secretKeyRef: { name: dbSecret.metadata.name, key: 'DATABASE' },
+                      },
+                    },
+                    {
+                      name: 'APP_USER',
+                      valueFrom: {
+                        secretKeyRef: { name: dbSecret.metadata.name, key: 'USERNAME' },
+                      },
+                    },
+                    {
+                      name: 'APP_PASSWORD',
+                      valueFrom: {
+                        secretKeyRef: { name: dbSecret.metadata.name, key: 'PASSWORD' },
+                      },
+                    },
+                  ],
+                  command: [
+                    'bash',
+                    '-ec',
+                    [
+                      'set -euo pipefail',
+                      'until pg_isready -q; do echo "waiting for postgres..."; sleep 2; done',
+                      // Escape ' for SQL string literals; identifiers come from our code (safe).
+                      'esc() { printf "%s" "$1" | sed "s/\'/\'\'/g"; }',
+                      'PASS_SQL=$(esc "$APP_PASSWORD")',
+                      'if [ "$(psql -tAc "SELECT 1 FROM pg_roles WHERE rolname=\'$APP_USER\'")" = "1" ]; then',
+                      '  psql -v ON_ERROR_STOP=1 -c "ALTER ROLE \\"$APP_USER\\" WITH LOGIN PASSWORD \'$PASS_SQL\'"',
+                      'else',
+                      '  psql -v ON_ERROR_STOP=1 -c "CREATE ROLE \\"$APP_USER\\" LOGIN PASSWORD \'$PASS_SQL\'"',
+                      'fi',
+                      'if [ "$(psql -tAc "SELECT 1 FROM pg_database WHERE datname=\'$APP_DB\'")" != "1" ]; then',
+                      '  psql -v ON_ERROR_STOP=1 -c "CREATE DATABASE \\"$APP_DB\\" OWNER \\"$APP_USER\\""',
+                      'fi',
+                      'psql -v ON_ERROR_STOP=1 -c "GRANT ALL PRIVILEGES ON DATABASE \\"$APP_DB\\" TO \\"$APP_USER\\""',
+                      'echo "database $APP_DB ready for $APP_USER"',
+                    ].join('\n'),
+                  ],
+                },
+              ],
+            },
+          },
+        },
+      },
+      {
+        provider: this.provider,
+        parent,
+        dependsOn: [this.sts, this.service, this.adminSecret, dbSecret],
+        deleteBeforeReplace: true,
+      },
+    );
+
+    return {
+      host: this.host,
+      port: this.port,
+      database: args.database,
+      username: args.username,
+      password: args.password,
+      ready: job,
+    };
   }
 }

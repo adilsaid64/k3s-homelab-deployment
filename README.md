@@ -72,15 +72,15 @@ pnpm sst remove --stage dev
 | ------------------ | -------------------------------------------------------------------------- |
 | Grafana            | http://grafana.k3s.local (Authentik OIDC, or local admin)                  |
 | Authentik          | http://auth.k3s.local (`akadmin` / `AUTHENTIK_BOOTSTRAP_PASSWORD`)         |
-| Postgres           | `postgres.postgres.svc.cluster.local:5432` (cluster-internal)              |
-| Excalidraw         | http://draw.k3s.local (Authentik forward-auth)                             |
-| MinIO console      | http://minio.k3s.local (Authentik OIDC)                                    |
-| Loki               | http://loki.k3s.local (Authentik forward-auth)                             |
-| Tempo (traces UI)  | http://tempo.k3s.local (Authentik forward-auth)                            |
+| Postgres           | `postgres.postgres.svc.cluster.local:5432` (shared; apps call `createDb`)  |
+| Excalidraw         | http://draw.k3s.local                                                      |
+| MinIO console      | http://minio.k3s.local (`minio` / `MINIO_ROOT_PASSWORD`)                   |
+| Loki               | http://loki.k3s.local                                                      |
+| Tempo (traces UI)  | http://tempo.k3s.local                                                     |
 | OTLP gRPC / HTTP   | `<any-node-ip>:4317` / `<any-node-ip>:4318` (no SSO — telemetry)           |
 | MQTT broker (EMQX) | `mqtt://<any-node-ip>:1883` (anonymous allowed; no SSO)                    |
 | MQTT websockets    | `ws://<any-node-ip>:8083`                                                  |
-| EMQX dashboard     | http://emqx.k3s.local (Authentik forward-auth)                             |
+| EMQX dashboard     | http://emqx.k3s.local                                                      |
 
 Publish a test MQTT message:
 
@@ -99,9 +99,7 @@ Infra auth (Proxmox) stays separate. Authentik is for cluster app dashboards.
 Bootstrap is automated via Helm (`AUTHENTIK_BOOTSTRAP_*` in `.env`) on an empty DB — no OOBE wizard.
 
 1. Log in at http://auth.k3s.local as `akadmin` / `AUTHENTIK_BOOTSTRAP_PASSWORD`.
-2. Deploy configures SSO automatically:
-   - **OIDC:** Grafana, MinIO
-   - **Forward-auth:** Excalidraw, Tempo, Loki, EMQX dashboard
+2. Deploy configures **OIDC for Grafana only** (apps without native SSO keep their own login).
 3. Add `emqx.k3s.local` to your hosts file (same IP as the other `*.k3s.local` entries).
 
 DNS wildcard (recommended): `address=/k3s.local/192.168.8.187` (or `home.lab` once renamed).

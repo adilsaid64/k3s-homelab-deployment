@@ -32,7 +32,8 @@ export class MinioStack extends pulumi.ComponentResource {
     const labels = { app: name };
     const rootUser = args.rootUser ?? 'minio';
     const rootPassword = args.rootPassword ?? 'minio123';
-    // Official minio/minio and quay.io/minio/minio are no longer publicly pullable.
+    // Official minio/* images are no longer publicly pullable; Chainguard tracks
+    // community MinIO (Console OIDC removed upstream since 2025-05 — use forward-auth).
     const image = args.image ?? 'cgr.dev/chainguard/minio:latest';
 
     this.namespace = new k8s.core.v1.Namespace(

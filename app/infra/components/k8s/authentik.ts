@@ -1,19 +1,12 @@
 import * as k8s from '@pulumi/kubernetes';
 import * as pulumi from '@pulumi/pulumi';
+import { PostgresStack } from './postgres';
 
 export interface AuthentikIngressArgs {
   enabled?: boolean;
   host: string;
   className?: string;
   tlsSecretName?: string;
-}
-
-export interface AuthentikPostgresArgs {
-  host: pulumi.Input<string>;
-  port?: pulumi.Input<number>;
-  database: pulumi.Input<string>;
-  username: pulumi.Input<string>;
-  password: pulumi.Input<string>;
 }
 
 export interface AuthentikBootstrapArgs {
@@ -24,13 +17,21 @@ export interface AuthentikBootstrapArgs {
   email?: pulumi.Input<string>;
 }
 
+export interface AuthentikDatabaseArgs {
+  name?: string;
+  username?: string;
+  password?: pulumi.Input<string>;
+}
+
 export interface AuthentikStackArgs {
   provider: k8s.Provider;
   namespace?: string;
   /** Min 50 chars. Used to sign sessions / cookies. */
   secretKey: pulumi.Input<string>;
-  /** External Postgres (see {@link PostgresStack}). */
-  postgres: AuthentikPostgresArgs;
+  /** Shared Postgres; Authentik calls {@link PostgresStack.createDb} for its schema. */
+  postgres: PostgresStack;
+  /** Overrides for the Authentik DB/role (defaults: authentik / authentik). */
+  database?: AuthentikDatabaseArgs;
   /** Skips OOBE; only applied when the DB is empty (first startup). */
   bootstrap: AuthentikBootstrapArgs;
   ingress?: AuthentikIngressArgs;
@@ -38,9 +39,8 @@ export interface AuthentikStackArgs {
 }
 
 /**
- * Authentik IdP for app-layer SSO (Grafana, MinIO, Traefik forward-auth, etc.).
- * Proxmox stays outside this — infra vs app auth layers.
- * Database is provided externally via {@link AuthentikStackArgs.postgres}.
+ * Authentik IdP for app-layer SSO (Grafana OIDC today).
+ * Provisions its own database on the shared {@link PostgresStack}.
  */
 export class AuthentikStack extends pulumi.ComponentResource {
   readonly namespace: k8s.core.v1.Namespace;
@@ -50,6 +50,19 @@ export class AuthentikStack extends pulumi.ComponentResource {
     super('custom:infra:AuthentikStack', name, {}, opts);
 
     const nsName = args.namespace ?? 'authentik';
+    const dbName = args.database?.name ?? 'authentik';
+    const dbUser = args.database?.username ?? 'authentik';
+    const dbPassword = args.database?.password ?? args.postgres.password;
+
+    const db = args.postgres.createDb(
+      `${name}-db`,
+      {
+        database: dbName,
+        username: dbUser,
+        password: dbPassword,
+      },
+      { parent: this },
+    );
 
     this.namespace = new k8s.core.v1.Namespace(
       nsName,
@@ -80,11 +93,11 @@ export class AuthentikStack extends pulumi.ComponentResource {
               enabled: false,
             },
             postgresql: {
-              host: args.postgres.host,
-              name: args.postgres.database,
-              user: args.postgres.username,
-              password: args.postgres.password,
-              port: args.postgres.port ?? 5432,
+              host: db.host,
+              name: db.database,
+              user: db.username,
+              password: db.password,
+              port: db.port,
             },
           },
           // Ubuntu 26.04 AppArmor stacking blocks kill(2) between container
@@ -136,7 +149,7 @@ export class AuthentikStack extends pulumi.ComponentResource {
       {
         provider: args.provider,
         parent: this,
-        dependsOn: this.namespace,
+        dependsOn: [this.namespace, db.ready],
       },
     );
 
