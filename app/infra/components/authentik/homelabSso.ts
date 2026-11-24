@@ -55,6 +55,16 @@ export class HomelabSso extends pulumi.ComponentResource {
 
     this.grafanaIni = pulumi.all([external, internal]).apply(([ext, int]) => ({
       server: { root_url: 'http://grafana.k3s.local' },
+      // Grafana 11+: users.allow_sign_up defaults false and blocks OAuth user creation
+      // even when auth.generic_oauth.allow_sign_up=true ("Failed to create user: user not found").
+      users: {
+        allow_sign_up: true,
+        auto_assign_org: true,
+        auto_assign_org_role: 'Editor',
+      },
+      auth: {
+        oauth_allow_insecure_email_lookup: true,
+      },
       'auth.generic_oauth': {
         enabled: true,
         name: 'authentik',
@@ -65,6 +75,9 @@ export class HomelabSso extends pulumi.ComponentResource {
         auth_url: `${ext}/application/o/authorize/`,
         token_url: `${int}/application/o/token/`,
         api_url: `${int}/application/o/userinfo/`,
+        login_attribute_path: 'preferred_username',
+        email_attribute_path: 'email',
+        name_attribute_path: 'name',
         role_attribute_path:
           "contains(groups[*], 'authentik Admins') && 'Admin' || 'Editor'",
         signout_redirect_url: `${ext}/application/o/grafana/end-session/`,
@@ -74,6 +87,10 @@ export class HomelabSso extends pulumi.ComponentResource {
 
     this.grafanaEnv = this.grafanaClientSecret.apply((clientSecret) => ({
       GF_AUTH_GENERIC_OAUTH_CLIENT_SECRET: clientSecret,
+      // Belt-and-suspenders: env wins over ini defaults in some chart versions.
+      GF_USERS_ALLOW_SIGN_UP: 'true',
+      GF_AUTH_GENERIC_OAUTH_ALLOW_SIGN_UP: 'true',
+      GF_AUTH_OAUTH_ALLOW_INSECURE_EMAIL_LOOKUP: 'true',
     }));
 
     this.registerOutputs({
